@@ -13075,18 +13075,30 @@ class AITCMMSSystem:
         """Export Cannot Find assets to PDF"""
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Cannot_Find_Assets_{timestamp}.pdf"
-        
+            default_filename = f"Cannot_Find_Assets_{timestamp}.pdf"
+
+            # Ask user where to save the file
+            filename = filedialog.asksaveasfilename(
+                title="Save Cannot Find Assets Report",
+                initialdir=os.path.expanduser("~/Documents"),
+                initialfile=default_filename,
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+            )
+
+            if not filename:
+                return  # User cancelled
+
             cursor = self.conn.cursor()
             cursor.execute('''
                 SELECT bfm_equipment_no, description, location, technician_name, reported_date, notes
-                FROM cannot_find_assets 
+                FROM cannot_find_assets
                 WHERE status = 'Missing'
                 ORDER BY reported_date DESC
             ''')
-        
+
             assets = cursor.fetchall()
-        
+
             doc = SimpleDocTemplate(filename, pagesize=letter)
             story = []
             styles = getSampleStyleSheet()
