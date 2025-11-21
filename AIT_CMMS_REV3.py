@@ -2215,7 +2215,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
 def export_professional_monthly_report_pdf(conn, month=None, year=None):
         """
-        Generate a professional
+        Generate a professional monthly report PDF
         """
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
@@ -2223,6 +2223,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         from reportlab.lib.units import inch
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from tkinter import filedialog
 
         try:
             # Rollback any failed transaction before starting
@@ -2231,19 +2232,31 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             pass  # Ignore if there's no transaction to rollback
 
         cursor = conn.cursor()
-        
+
         # Use current month/year if not specified
         if month is None or year is None:
             now = datetime.now()
             month = month or now.month
             year = year or now.year
-    
+
         month_name = calendar.month_name[month]
-    
+
         # Create PDF filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"AIT_Monthly_Report_{month_name}_{year}_{timestamp}.pdf"
-    
+        default_filename = f"AIT_Monthly_Report_{month_name}_{year}_{timestamp}.pdf"
+
+        # Ask user where to save the file
+        filename = filedialog.asksaveasfilename(
+            title="Save Monthly Report",
+            initialdir=os.path.expanduser("~/Documents"),
+            initialfile=default_filename,
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+        )
+
+        if not filename:
+            return None  # User cancelled
+
         # Create document
         doc = SimpleDocTemplate(filename, pagesize=letter,
                             rightMargin=36, leftMargin=36,
@@ -4283,22 +4296,26 @@ class AITCMMSSystem:
                 try:
                     month = int(month_var.get())
                     year = int(year_var.get())
-                    
+
                     # Show progress message
-                    progress_label = ttk.Label(selection_frame, text="Generating professional PDF...", 
+                    progress_label = ttk.Label(selection_frame, text="Generating professional PDF...",
                                                foreground='blue')
                     progress_label.pack(side='left', padx=10)
                     summary_window.update()
-                    
+
                     # Generate the PDF
                     filename = export_professional_monthly_report_pdf(self.conn, month, year)
-                    
+
                     # Remove progress label
                     progress_label.destroy()
-                    
+
+                    # Check if user cancelled
+                    if filename is None:
+                        return
+
                     # Success message with option to open
                     result = messagebox.askyesno(
-                        "Success", 
+                        "Success",
                         f"Professional monthly report exported!\n\n{filename}\n\nWould you like to open it now?",
                         icon='info'
                     )
