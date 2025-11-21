@@ -5312,7 +5312,7 @@ class AITCMMSSystem:
             cursor = self.conn.cursor()
             cursor.execute('SELECT description FROM default_pm_checklist ORDER BY step_number')
             default_steps = cursor.fetchall()
-        
+
             checklist_listbox.delete(0, 'end')
             for i, (step,) in enumerate(default_steps, 1):
                 checklist_listbox.insert('end', f"{i}. {step}")
@@ -5323,48 +5323,126 @@ class AITCMMSSystem:
                 if not bfm_var.get():
                     messagebox.showerror("Error", "Please select equipment")
                     return
-            
+
                 if not template_name_var.get().strip():
                     messagebox.showerror("Error", "Please enter template name")
                     return
-            
+
                 # Extract BFM number from combo selection
                 bfm_no = bfm_var.get().split(' - ')[0]
-            
+
+                cursor = self.conn.cursor()
+
+                # Validate BFM number exists in equipment table
+                cursor.execute('SELECT bfm_equipment_no, sap_material_no FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                equipment_result = cursor.fetchone()
+
+                if not equipment_result:
+                    messagebox.showerror("Validation Error",
+                        f"BFM number '{bfm_no}' does not exist in the equipment database.\n\n"
+                        "Please select a valid equipment from the dropdown.")
+                    return
+
+                # Validate SAP number if it exists
+                bfm_from_db, sap_no = equipment_result
+                if not sap_no or sap_no.strip() == '':
+                    # Warn about missing SAP number but allow to continue
+                    response = messagebox.askyesno("Warning: Missing SAP Number",
+                        f"Equipment '{bfm_no}' does not have a SAP Material Number assigned.\n\n"
+                        "This may cause issues with asset tracking and reporting.\n\n"
+                        "Do you want to continue anyway?")
+                    if not response:
+                        return
+
                 # Get checklist items
                 checklist_items = []
                 for i in range(checklist_listbox.size()):
                     step_text = checklist_listbox.get(i)
                     step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
                     checklist_items.append(step_content)
-            
+
                 if not checklist_items:
                     messagebox.showerror("Error", "Please add at least one checklist item")
                     return
-            
-                # Save to database
-                cursor = self.conn.cursor()
+
+                # Check if a template already exists for this equipment + PM type combination
                 cursor.execute('''
-                    INSERT INTO pm_templates 
-                    (bfm_equipment_no, template_name, pm_type, checklist_items, 
-                    special_instructions, safety_notes, estimated_hours)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    bfm_no,
-                    template_name_var.get().strip(),
-                    pm_type_var.get(),
-                    json.dumps(checklist_items),
-                    special_instructions_text.get('1.0', 'end-1c'),
-                    safety_notes_text.get('1.0', 'end-1c'),
-                    float(est_hours_var.get() or 1.0)
-                ))
-            
-                self.conn.commit()
-                messagebox.showinfo("Success", "Custom PM template created successfully!")
-                dialog.destroy()
-                self.load_pm_templates()
-            
+                    SELECT id, template_name FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND pm_type = %s
+                    ORDER BY updated_date DESC LIMIT 1
+                ''', (bfm_no, pm_type_var.get()))
+
+                existing_template = cursor.fetchone()
+
+                if existing_template:
+                    existing_id, existing_name = existing_template
+                    # Template exists - UPDATE it automatically
+                    response = messagebox.askyesno("Replace Existing Template",
+                        f"A PM template already exists for {bfm_no} ({pm_type_var.get()}):\n"
+                        f"  Current template: '{existing_name}'\n"
+                        f"  New template: '{template_name_var.get().strip()}'\n\n"
+                        "This will replace the existing template with the new one.\n\n"
+                        "Do you want to continue?")
+
+                    if not response:
+                        return
+
+                    # UPDATE existing template
+                    cursor.execute('''
+                        UPDATE pm_templates
+                        SET template_name = %s,
+                            checklist_items = %s,
+                            special_instructions = %s,
+                            safety_notes = %s,
+                            estimated_hours = %s,
+                            updated_date = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    ''', (
+                        template_name_var.get().strip(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0),
+                        existing_id
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success",
+                        f"PM template updated successfully!\n\n"
+                        f"Equipment: {bfm_no}\n"
+                        f"PM Type: {pm_type_var.get()}\n"
+                        f"Template: '{template_name_var.get().strip()}'")
+                    dialog.destroy()
+                    self.load_pm_templates()
+
+                else:
+                    # No existing template - INSERT new one
+                    cursor.execute('''
+                        INSERT INTO pm_templates
+                        (bfm_equipment_no, template_name, pm_type, checklist_items,
+                        special_instructions, safety_notes, estimated_hours)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        bfm_no,
+                        template_name_var.get().strip(),
+                        pm_type_var.get(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0)
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success",
+                        f"Custom PM template created successfully!\n\n"
+                        f"Equipment: {bfm_no}\n"
+                        f"PM Type: {pm_type_var.get()}\n"
+                        f"Template: '{template_name_var.get().strip()}'")
+                    dialog.destroy()
+                    self.load_pm_templates()
+
             except Exception as e:
+                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to save template: {str(e)}")
 
         def on_step_select(event):
@@ -7621,7 +7699,7 @@ class AITCMMSSystem:
             cursor = self.conn.cursor()
             cursor.execute('SELECT description FROM default_pm_checklist ORDER BY step_number')
             default_steps = cursor.fetchall()
-        
+
             checklist_listbox.delete(0, 'end')
             for i, (step,) in enumerate(default_steps, 1):
                 checklist_listbox.insert('end', f"{i}. {step}")
@@ -7632,48 +7710,126 @@ class AITCMMSSystem:
                 if not bfm_var.get():
                     messagebox.showerror("Error", "Please select equipment")
                     return
-            
+
                 if not template_name_var.get().strip():
                     messagebox.showerror("Error", "Please enter template name")
                     return
-            
+
                 # Extract BFM number from combo selection
                 bfm_no = bfm_var.get().split(' - ')[0]
-            
+
+                cursor = self.conn.cursor()
+
+                # Validate BFM number exists in equipment table
+                cursor.execute('SELECT bfm_equipment_no, sap_material_no FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                equipment_result = cursor.fetchone()
+
+                if not equipment_result:
+                    messagebox.showerror("Validation Error",
+                        f"BFM number '{bfm_no}' does not exist in the equipment database.\n\n"
+                        "Please select a valid equipment from the dropdown.")
+                    return
+
+                # Validate SAP number if it exists
+                bfm_from_db, sap_no = equipment_result
+                if not sap_no or sap_no.strip() == '':
+                    # Warn about missing SAP number but allow to continue
+                    response = messagebox.askyesno("Warning: Missing SAP Number",
+                        f"Equipment '{bfm_no}' does not have a SAP Material Number assigned.\n\n"
+                        "This may cause issues with asset tracking and reporting.\n\n"
+                        "Do you want to continue anyway?")
+                    if not response:
+                        return
+
                 # Get checklist items
                 checklist_items = []
                 for i in range(checklist_listbox.size()):
                     step_text = checklist_listbox.get(i)
                     step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
                     checklist_items.append(step_content)
-            
+
                 if not checklist_items:
                     messagebox.showerror("Error", "Please add at least one checklist item")
                     return
-            
-                # Save to database
-                cursor = self.conn.cursor()
+
+                # Check if a template already exists for this equipment + PM type combination
                 cursor.execute('''
-                    INSERT INTO pm_templates 
-                    (bfm_equipment_no, template_name, pm_type, checklist_items, 
-                    special_instructions, safety_notes, estimated_hours)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    bfm_no,
-                    template_name_var.get().strip(),
-                    pm_type_var.get(),
-                    json.dumps(checklist_items),
-                    special_instructions_text.get('1.0', 'end-1c'),
-                    safety_notes_text.get('1.0', 'end-1c'),
-                    float(est_hours_var.get() or 1.0)
-                ))
-            
-                self.conn.commit()
-                messagebox.showinfo("Success", "Custom PM template created successfully!")
-                dialog.destroy()
-                self.load_pm_templates()
-            
+                    SELECT id, template_name FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND pm_type = %s
+                    ORDER BY updated_date DESC LIMIT 1
+                ''', (bfm_no, pm_type_var.get()))
+
+                existing_template = cursor.fetchone()
+
+                if existing_template:
+                    existing_id, existing_name = existing_template
+                    # Template exists - UPDATE it automatically
+                    response = messagebox.askyesno("Replace Existing Template",
+                        f"A PM template already exists for {bfm_no} ({pm_type_var.get()}):\n"
+                        f"  Current template: '{existing_name}'\n"
+                        f"  New template: '{template_name_var.get().strip()}'\n\n"
+                        "This will replace the existing template with the new one.\n\n"
+                        "Do you want to continue?")
+
+                    if not response:
+                        return
+
+                    # UPDATE existing template
+                    cursor.execute('''
+                        UPDATE pm_templates
+                        SET template_name = %s,
+                            checklist_items = %s,
+                            special_instructions = %s,
+                            safety_notes = %s,
+                            estimated_hours = %s,
+                            updated_date = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    ''', (
+                        template_name_var.get().strip(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0),
+                        existing_id
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success",
+                        f"PM template updated successfully!\n\n"
+                        f"Equipment: {bfm_no}\n"
+                        f"PM Type: {pm_type_var.get()}\n"
+                        f"Template: '{template_name_var.get().strip()}'")
+                    dialog.destroy()
+                    self.load_pm_templates()
+
+                else:
+                    # No existing template - INSERT new one
+                    cursor.execute('''
+                        INSERT INTO pm_templates
+                        (bfm_equipment_no, template_name, pm_type, checklist_items,
+                        special_instructions, safety_notes, estimated_hours)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        bfm_no,
+                        template_name_var.get().strip(),
+                        pm_type_var.get(),
+                        json.dumps(checklist_items),
+                        special_instructions_text.get('1.0', 'end-1c'),
+                        safety_notes_text.get('1.0', 'end-1c'),
+                        float(est_hours_var.get() or 1.0)
+                    ))
+
+                    self.conn.commit()
+                    messagebox.showinfo("Success",
+                        f"Custom PM template created successfully!\n\n"
+                        f"Equipment: {bfm_no}\n"
+                        f"PM Type: {pm_type_var.get()}\n"
+                        f"Template: '{template_name_var.get().strip()}'")
+                    dialog.destroy()
+                    self.load_pm_templates()
+
             except Exception as e:
+                self.conn.rollback()
                 messagebox.showerror("Error", f"Failed to save template: {str(e)}")
 
         def on_step_select(event):
