@@ -1,0 +1,41 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+~$*
+
+# PDF output files (generated PM forms)
+PM_Form_*.pdf
+PM_Forms_Week_*/
+
+# Excel exports
+*.xlsx
+Weekly_PM_Schedule_*.xlsx
