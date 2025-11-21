@@ -18557,7 +18557,7 @@ class AITCMMSSystem:
         dialog.bind('<Escape>', lambda e: on_cancel())
 
     def print_equipment_pm_form(self, bfm_no, equipment_data, selected_pm_type=None):
-        """Generate and print PM form for specific equipment"""
+        """Generate and print PM form for specific equipment using standard format"""
         try:
             cursor = self.conn.cursor()
 
@@ -18585,140 +18585,41 @@ class AITCMMSSystem:
                     messagebox.showwarning("No PM Types", "This equipment has no PM types configured.")
                     return
 
-            # Get PM template if available for the selected PM type
-            cursor.execute('''
-                SELECT pm_type, checklist_items, special_instructions
-                FROM pm_templates
-                WHERE bfm_equipment_no = %s AND pm_type = %s
-                LIMIT 1
-            ''', (bfm_no, selected_pm_type))
-
-            template_data = cursor.fetchone()
-
-            # Create PDF
+            # Ask user where to save the PM form
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"PM_Form_{bfm_no}_{timestamp}.pdf"
+            default_filename = f"PM_Form_{bfm_no}_{selected_pm_type}_{timestamp}.pdf"
 
-            doc = SimpleDocTemplate(filename, pagesize=letter,
-                                   rightMargin=36, leftMargin=36,
-                                   topMargin=36, bottomMargin=36)
-
-            styles = getSampleStyleSheet()
-            story = []
-
-            # Header
-            company_style = ParagraphStyle(
-                'CompanyStyle',
-                parent=styles['Heading1'],
-                fontSize=14,
-                fontName='Helvetica-Bold',
-                alignment=1,
-                textColor=colors.darkblue
+            file_path = filedialog.asksaveasfilename(
+                title="Save PM Form",
+                initialdir=os.path.expanduser("~/Documents"),
+                initialfile=default_filename,
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
             )
 
-            story.append(Paragraph("PREVENTATIVE MAINTENANCE WORK ORDER", company_style))
-            story.append(Spacer(1, 0.3 * inch))
+            if not file_path:
+                return  # User cancelled
 
-            # Equipment information table
-            equipment_info = [
-                ['BFM Equipment No.:', bfm or ''],
-                ['SAP Material No.:', sap_no or ''],
-                ['Description:', description or ''],
-                ['Location:', location or ''],
-                ['Master LIN:', master_lin or ''],
-            ]
+            # Create assignment tuple in the format expected by create_pm_forms_pdf
+            # Format: (bfm_no, sap_no, description, tool_id, location, master_lin, pm_type, scheduled_date, technician)
+            scheduled_date = datetime.now().strftime('%Y-%m-%d')
+            assignment = (bfm_no, sap_no, description, tool_id, location, master_lin, selected_pm_type, scheduled_date, 'To Be Assigned')
 
-            equipment_table = Table(equipment_info, colWidths=[2 * inch, 4.5 * inch])
-            equipment_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ]))
+            # Use the standard PM form creation function
+            self.create_pm_forms_pdf(file_path, 'To Be Assigned', [assignment])
 
-            story.append(equipment_table)
-            story.append(Spacer(1, 0.3 * inch))
-
-            # PM Type - show selected type
-            story.append(Paragraph(f"<b>PM Type: {selected_pm_type}</b>", styles['Normal']))
-            story.append(Spacer(1, 0.3 * inch))
-
-            # Work performed section
-            story.append(Paragraph("<b>Work Performed / Tasks Completed:</b>", styles['Normal']))
-            story.append(Spacer(1, 0.1 * inch))
-
-            if template_data:
-                # Use template tasks/checklist if available
-                checklist_items = template_data[1]  # checklist_items
-                special_instructions = template_data[2]  # special_instructions
-
-                if checklist_items:
-                    # Parse checklist items if JSON
-                    import json
-                    try:
-                        items = json.loads(checklist_items) if isinstance(checklist_items, str) else checklist_items
-                        if isinstance(items, list):
-                            for item in items:
-                                if isinstance(item, dict):
-                                    story.append(Paragraph(f"☐ {item.get('description', item.get('task', str(item)))}", styles['Normal']))
-                                else:
-                                    story.append(Paragraph(f"☐ {str(item)}", styles['Normal']))
-                        else:
-                            story.append(Paragraph(str(checklist_items).replace('\n', '<br/>'), styles['Normal']))
-                    except:
-                        # Not JSON, treat as plain text
-                        story.append(Paragraph(str(checklist_items).replace('\n', '<br/>'), styles['Normal']))
-                    story.append(Spacer(1, 0.2 * inch))
-
-                if special_instructions:
-                    story.append(Paragraph("<b>Special Instructions:</b>", styles['Normal']))
-                    story.append(Paragraph(str(special_instructions).replace('\n', '<br/>'), styles['Normal']))
-                    story.append(Spacer(1, 0.2 * inch))
-
-            # Add empty lines for additional notes
-            story.append(Paragraph("<b>Additional Notes:</b>", styles['Normal']))
-            for i in range(5):
-                story.append(Spacer(1, 0.2 * inch))
-                story.append(Table([['_' * 100]], colWidths=[6.5 * inch]))
-
-            story.append(Spacer(1, 0.3 * inch))
-
-            # Signature section
-            signature_data = [
-                ['Technician:', '_' * 40, 'Date:', '_' * 20],
-                ['Labor Hours:', '_' * 40, '', ''],
-            ]
-
-            signature_table = Table(signature_data, colWidths=[1.5 * inch, 2.5 * inch, 1 * inch, 1.5 * inch])
-            signature_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-            ]))
-
-            story.append(signature_table)
-
-            # Build PDF
-            doc.build(story)
-
-            messagebox.showinfo("Success", f"PM form generated: {filename}")
+            messagebox.showinfo("Success", f"PM form generated: {file_path}")
             self.update_status(f"PM form created for {bfm_no}")
 
             # Open the PDF
             import subprocess
             import platform
             if platform.system() == 'Darwin':  # macOS
-                subprocess.call(('open', filename))
+                subprocess.call(('open', file_path))
             elif platform.system() == 'Windows':
-                os.startfile(filename)
+                os.startfile(file_path)
             else:  # Linux
-                subprocess.call(('xdg-open', filename))
+                subprocess.call(('xdg-open', file_path))
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate PM form: {str(e)}")
@@ -19058,10 +18959,19 @@ class AITCMMSSystem:
         try:
             week_start = self.week_start_var.get()
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
-            # Create directory for PM forms
-            forms_dir = f"PM_Forms_Week_{week_start}_{timestamp}"
-            os.makedirs(forms_dir, exist_ok=True)
+
+            # Ask user where to save PM forms
+            forms_dir = filedialog.askdirectory(
+                title="Select folder to save PM Forms",
+                initialdir=os.path.expanduser("~/Documents")
+            )
+
+            if not forms_dir:
+                return  # User cancelled
+
+            # Create subdirectory for this week's forms
+            week_dir = os.path.join(forms_dir, f"PM_Forms_Week_{week_start}_{timestamp}")
+            os.makedirs(week_dir, exist_ok=True)
         
             cursor = self.conn.cursor()
         
@@ -19080,10 +18990,10 @@ class AITCMMSSystem:
             
                 if assignments:
                     # Create PDF for this technician
-                    filename = os.path.join(forms_dir, f"{technician.replace(' ', '_')}_PM_Forms.pdf")
+                    filename = os.path.join(week_dir, f"{technician.replace(' ', '_')}_PM_Forms.pdf")
                     self.create_pm_forms_pdf(filename, technician, assignments)
-        
-            messagebox.showinfo("Success", f"PM forms generated in directory: {forms_dir}")
+
+            messagebox.showinfo("Success", f"PM forms generated in directory: {week_dir}")
             self.update_status(f"PM forms generated for week {week_start}")
         
         except Exception as e:
@@ -19156,10 +19066,22 @@ class AITCMMSSystem:
             # =================== LOGO SECTION ===================
             # Dynamic logo path that works on any computer
                 script_dir = os.path.dirname(os.path.abspath(__file__))
-                logo_path = os.path.join(script_dir, "img", "ait_logo.png")
+                # Try multiple possible logo locations
+                possible_logo_paths = [
+                    os.path.join(script_dir, "ait_Logo.png"),
+                    os.path.join(script_dir, "img", "ait_logo.png"),
+                    os.path.join(script_dir, "img", "ait_Logo.png"),
+                    os.path.join(script_dir, "ait_logo.png")
+                ]
+
+                logo_path = None
+                for path in possible_logo_paths:
+                    if os.path.exists(path):
+                        logo_path = path
+                        break
 
                 try:
-                    if os.path.exists(logo_path):
+                    if logo_path and os.path.exists(logo_path):
                         # Create centered logo
                         logo_image = Image(logo_path, width=4*inch, height=1.2*inch)
 
