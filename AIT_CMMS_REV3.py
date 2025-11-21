@@ -13091,10 +13091,18 @@ class AITCMMSSystem:
 
             cursor = self.conn.cursor()
             cursor.execute('''
-                SELECT bfm_equipment_no, description, location, technician_name, reported_date, notes
-                FROM cannot_find_assets
-                WHERE status = 'Missing'
-                ORDER BY reported_date DESC
+                SELECT
+                    cf.bfm_equipment_no,
+                    e.sap_material_no,
+                    cf.description,
+                    cf.location,
+                    cf.technician_name,
+                    cf.reported_date,
+                    cf.notes
+                FROM cannot_find_assets cf
+                LEFT JOIN equipment e ON cf.bfm_equipment_no = e.bfm_equipment_no
+                WHERE cf.status = 'Missing'
+                ORDER BY cf.reported_date DESC
             ''')
 
             assets = cursor.fetchall()
@@ -13102,49 +13110,57 @@ class AITCMMSSystem:
             doc = SimpleDocTemplate(filename, pagesize=letter)
             story = []
             styles = getSampleStyleSheet()
-        
+
             # Title
-            title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], 
+            title_style = ParagraphStyle('TitleStyle', parent=styles['Title'],
                                     fontSize=18, textColor=colors.darkred, alignment=1)
             story.append(Paragraph("AIRBUS AIT - CANNOT FIND ASSETS REPORT", title_style))
             story.append(Spacer(1, 20))
-        
+
             # Report info
             story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
             story.append(Paragraph(f"Total Missing Assets: {len(assets)}", styles['Normal']))
             story.append(Spacer(1, 20))
-        
+
             if assets:
                 # Create table with proper column widths
-                data = [['BFM Equipment No.', 'Description', 'Location', 'Reported By', 'Report Date']]
+                data = [['SAP No.', 'BFM No.', 'Description', 'Location', 'Reported By', 'Report Date']]
 
-                # Create a style for wrapping text in cells
-                cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=9, leading=11)
+                # Create a style for wrapping text in cells with word wrap enabled
+                cell_style = ParagraphStyle(
+                    'CellStyle',
+                    parent=styles['Normal'],
+                    fontSize=8,
+                    leading=10,
+                    wordWrap='CJK'  # Enable word wrapping
+                )
 
                 for asset in assets:
-                    bfm_no, description, location, technician, reported_date, notes = asset
+                    bfm_no, sap_no, description, location, technician, reported_date, notes = asset
                     data.append([
-                        Paragraph(str(bfm_no or ''), cell_style),
+                        Paragraph(str(sap_no or 'N/A'), cell_style),
+                        Paragraph(str(bfm_no or 'N/A'), cell_style),
                         Paragraph(str(description or ''), cell_style),
                         Paragraph(str(location or ''), cell_style),
                         Paragraph(str(technician or ''), cell_style),
                         Paragraph(str(reported_date or ''), cell_style)
                     ])
 
-                # Adjusted column widths: wider for description and more balanced overall
-                table = Table(data, colWidths=[1.3*inch, 3*inch, 1.3*inch, 1.3*inch, 1.1*inch])
+                # Adjusted column widths to fit both SAP and BFM numbers
+                table = Table(data, colWidths=[0.95*inch, 0.95*inch, 2.4*inch, 1.1*inch, 1.1*inch, 0.9*inch])
                 table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
                     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                     ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                     ('GRID', (0, 0), (-1, -1), 1, colors.black),
                     ('TOPPADDING', (0, 1), (-1, -1), 6),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                    ('WORDWRAP', (0, 0), (-1, -1), True)
                 ]))
             
                 story.append(table)
