@@ -33,7 +33,7 @@ class DatabaseConnectionPool:
             self.config = None
             self.keepalive_thread = None
             self.keepalive_stop = threading.Event()
-            self.keepalive_interval = 120  # 2 minutes (more aggressive to prevent NEON timeouts)
+            self.keepalive_interval = 30  # 30 seconds (aggressive to prevent NEON idle disconnect)
 
     def initialize(self, db_config, min_conn=2, max_conn=10):
         """
