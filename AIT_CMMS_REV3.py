@@ -18052,9 +18052,17 @@ class AITCMMSSystem:
                     # Handle Run to Failure status
                     if run_to_failure_var.get() and current_status != 'Run to Failure':
                         cursor.execute('''
-                            INSERT OR REPLACE INTO run_to_failure_assets
+                            INSERT INTO run_to_failure_assets
                             (bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (bfm_equipment_no)
+                            DO UPDATE SET
+                                description = EXCLUDED.description,
+                                location = EXCLUDED.location,
+                                technician_name = EXCLUDED.technician_name,
+                                completion_date = EXCLUDED.completion_date,
+                                labor_hours = EXCLUDED.labor_hours,
+                                notes = EXCLUDED.notes
                         ''', (
                             bfm_no,
                             entries["Description:"].get(),
@@ -18081,9 +18089,17 @@ class AITCMMSSystem:
 
                         # Add or update in cannot_find_assets table
                         cursor.execute('''
-                            INSERT OR REPLACE INTO cannot_find_assets
+                            INSERT INTO cannot_find_assets
                             (bfm_equipment_no, description, location, technician_name, reported_date, status, notes)
                             VALUES (%s, %s, %s, %s, %s, 'Missing', %s)
+                            ON CONFLICT (bfm_equipment_no)
+                            DO UPDATE SET
+                                description = EXCLUDED.description,
+                                location = EXCLUDED.location,
+                                technician_name = EXCLUDED.technician_name,
+                                reported_date = EXCLUDED.reported_date,
+                                status = EXCLUDED.status,
+                                notes = EXCLUDED.notes
                         ''', (
                             bfm_no,
                             entries["Description:"].get(),
