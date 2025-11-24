@@ -10328,7 +10328,14 @@ class AITCMMSSystem:
 
         # Populate with available weeks
         self.populate_week_selector()
-        
+
+        # Weekly PM target input
+        ttk.Label(controls_frame, text="Weekly PM Target:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.weekly_pm_target_var = tk.IntVar(value=self.weekly_pm_target)
+        weekly_target_spinbox = ttk.Spinbox(controls_frame, from_=1, to=500,
+                                           textvariable=self.weekly_pm_target_var, width=10)
+        weekly_target_spinbox.grid(row=1, column=1, sticky='w', padx=5, pady=5)
+
         ttk.Button(controls_frame, text="Generate Weekly Schedule",
                   command=self.generate_weekly_assignments).grid(row=0, column=2, padx=5)
         ttk.Button(controls_frame, text="Print PM Forms",
@@ -18983,8 +18990,11 @@ class AITCMMSSystem:
             # Get the week start date
             week_start = self.week_start_var.get()
 
+            # Get the weekly PM target from the UI (user-configurable)
+            weekly_target = self.weekly_pm_target_var.get()
+
             # Generate the schedule
-            result = pm_service.generate_weekly_schedule(week_start, self.weekly_pm_target)
+            result = pm_service.generate_weekly_schedule(week_start, weekly_target)
 
             if result['success']:
                 # Check if there's a special message (like no equipment or no assignments)
