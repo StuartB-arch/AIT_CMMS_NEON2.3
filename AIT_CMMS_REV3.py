@@ -10305,7 +10305,7 @@ class AITCMMSSystem:
             # Monthly PM count
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
-                WHERE e.monthly = TRUE
+                WHERE e.monthly_pm = TRUE
                 AND e.status != %s
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
@@ -10316,7 +10316,7 @@ class AITCMMSSystem:
             # 6-Month PM count
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
-                WHERE e.six_month = TRUE
+                WHERE e.six_month_pm = TRUE
                 AND e.status != %s
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
@@ -10327,7 +10327,7 @@ class AITCMMSSystem:
             # Annual PM count
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
-                WHERE e.annual = TRUE
+                WHERE e.annual_pm = TRUE
                 AND e.status != %s
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
