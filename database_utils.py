@@ -33,7 +33,10 @@ class DatabaseConnectionPool:
             self.config = None
             self.keepalive_thread = None
             self.keepalive_stop = threading.Event()
-            self.keepalive_interval = 30  # 30 seconds (aggressive to prevent NEON idle disconnect)
+            self.keepalive_interval = 20  # 20 seconds (very aggressive for NEON free tier)
+            self.connection_max_age = 240  # 4 minutes - force recreation before NEON timeout
+            self.connection_created_times = {}  # Track when each connection was created
+            self._connection_lock = threading.Lock()  # Lock for connection tracking
 
     def initialize(self, db_config, min_conn=2, max_conn=10):
         """
@@ -77,6 +80,25 @@ class DatabaseConnectionPool:
         for attempt in range(max_retries):
             try:
                 conn = self.pool.getconn()
+                conn_id = id(conn)
+
+                # Check if connection is too old and needs replacement
+                with self._connection_lock:
+                    created_time = self.connection_created_times.get(conn_id)
+                    if created_time:
+                        age = time.time() - created_time
+                        if age > self.connection_max_age:
+                            print(f"Connection {conn_id} is {age:.1f}s old (max: {self.connection_max_age}s), replacing...")
+                            try:
+                                conn.close()
+                                del self.connection_created_times[conn_id]
+                            except:
+                                pass
+                            # Get a new connection on next iteration
+                            if attempt < max_retries - 1:
+                                continue
+                            else:
+                                raise Exception("Connection too old, failed to get replacement")
 
                 # Validate connection is still alive before returning it
                 try:
@@ -87,10 +109,19 @@ class DatabaseConnectionPool:
                     cursor.close()
                     # End the transaction created by SELECT query
                     conn.commit()
+
+                    # Track connection creation time if new
+                    with self._connection_lock:
+                        if conn_id not in self.connection_created_times:
+                            self.connection_created_times[conn_id] = time.time()
+
                     return conn
                 except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
                     # Connection is dead, close it and get a new one
                     print(f"Connection validation failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    with self._connection_lock:
+                        if conn_id in self.connection_created_times:
+                            del self.connection_created_times[conn_id]
                     try:
                         conn.close()
                     except:
@@ -117,31 +148,79 @@ class DatabaseConnectionPool:
             self.pool.putconn(conn)
 
     def _keepalive_worker(self):
-        """Background thread that keeps connections alive for NEON free tier"""
+        """
+        Background thread that keeps ALL pooled connections alive for NEON free tier.
+        This cycles through available connections in the pool to keep them active.
+        """
         print(f"Keepalive thread started (checking every {self.keepalive_interval}s to prevent NEON suspension)")
+        print(f"Connection max age set to {self.connection_max_age}s - connections will be recreated before timeout")
 
         while not self.keepalive_stop.is_set():
             # Wait for the interval or until stop is signaled
             if self.keepalive_stop.wait(timeout=self.keepalive_interval):
                 break
 
-            # Send a simple query to keep the connection alive
-            retry_count = 0
-            max_retries = 3
-            while retry_count < max_retries:
-                try:
-                    with self.get_cursor(commit=False) as cursor:
+            # Ping all available connections in the pool
+            connections_pinged = 0
+            connections_failed = 0
+            connections_to_check = []
+
+            # Get multiple connections from the pool (up to minconn to avoid exhausting pool)
+            # We'll get and ping them, then return them
+            try:
+                # Try to get up to min_conn connections to keep them alive
+                # Don't get too many to avoid blocking the application
+                max_to_ping = 5  # Ping up to 5 connections per cycle
+
+                for i in range(max_to_ping):
+                    try:
+                        conn = self.pool.getconn()
+                        if conn:
+                            connections_to_check.append(conn)
+                    except:
+                        # No more available connections, that's OK
+                        break
+
+                # Now ping each connection
+                for conn in connections_to_check:
+                    try:
+                        cursor = conn.cursor()
                         cursor.execute("SELECT 1")
                         cursor.fetchone()
-                    print(f"✓ Keepalive ping sent to database (interval: {self.keepalive_interval}s)")
-                    break  # Success, exit retry loop
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        print(f"⚠ Keepalive ping failed (attempt {retry_count}/{max_retries}): {e}. Retrying in 5s...")
-                        time.sleep(5)
-                    else:
-                        print(f"✗ Keepalive ping failed after {max_retries} attempts: {e}. Will retry at next interval.")
+                        cursor.close()
+                        conn.commit()
+                        connections_pinged += 1
+                    except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                        # Connection is dead, close it
+                        connections_failed += 1
+                        conn_id = id(conn)
+                        print(f"⚠ Keepalive found dead connection {conn_id}: {e}")
+                        with self._connection_lock:
+                            if conn_id in self.connection_created_times:
+                                del self.connection_created_times[conn_id]
+                        try:
+                            conn.close()
+                        except:
+                            pass
+                    except Exception as e:
+                        connections_failed += 1
+                        print(f"⚠ Keepalive ping error: {e}")
+
+                # Return all connections to pool (except failed ones which we closed)
+                for conn in connections_to_check:
+                    if not conn.closed:
+                        self.pool.putconn(conn)
+
+                if connections_pinged > 0:
+                    status = f"✓ Keepalive: pinged {connections_pinged} connection(s)"
+                    if connections_failed > 0:
+                        status += f", {connections_failed} failed and replaced"
+                    print(status)
+                elif connections_failed > 0:
+                    print(f"⚠ Keepalive: {connections_failed} connection(s) failed, will be replaced on next use")
+
+            except Exception as e:
+                print(f"✗ Keepalive cycle error: {e}")
 
         print("Keepalive thread stopped")
 
@@ -170,6 +249,8 @@ class DatabaseConnectionPool:
         if self.pool:
             self.pool.closeall()
             self.pool = None
+            with self._connection_lock:
+                self.connection_created_times.clear()
             print("Connection pool closed")
 
     @contextmanager
