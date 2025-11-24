@@ -5331,6 +5331,8 @@ class AITCMMSSystem:
                 # Extract BFM number from combo selection
                 bfm_no = bfm_var.get().split(' - ')[0]
 
+                # Ensure database connection is alive before operations
+                self._ensure_connection()
                 cursor = self.conn.cursor()
 
                 # Validate BFM number exists in equipment table
@@ -5442,7 +5444,12 @@ class AITCMMSSystem:
                     self.load_pm_templates()
 
             except Exception as e:
-                self.conn.rollback()
+                # Handle rollback safely - connection might already be closed
+                try:
+                    if hasattr(self, 'conn') and self.conn and not self.conn.closed:
+                        self.conn.rollback()
+                except (psycopg2.InterfaceError, psycopg2.OperationalError):
+                    pass  # Connection already closed, nothing to rollback
                 messagebox.showerror("Error", f"Failed to save template: {str(e)}")
 
         def on_step_select(event):
@@ -7718,6 +7725,8 @@ class AITCMMSSystem:
                 # Extract BFM number from combo selection
                 bfm_no = bfm_var.get().split(' - ')[0]
 
+                # Ensure database connection is alive before operations
+                self._ensure_connection()
                 cursor = self.conn.cursor()
 
                 # Validate BFM number exists in equipment table
@@ -7829,7 +7838,12 @@ class AITCMMSSystem:
                     self.load_pm_templates()
 
             except Exception as e:
-                self.conn.rollback()
+                # Handle rollback safely - connection might already be closed
+                try:
+                    if hasattr(self, 'conn') and self.conn and not self.conn.closed:
+                        self.conn.rollback()
+                except (psycopg2.InterfaceError, psycopg2.OperationalError):
+                    pass  # Connection already closed, nothing to rollback
                 messagebox.showerror("Error", f"Failed to save template: {str(e)}")
 
         def on_step_select(event):
