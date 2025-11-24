@@ -10110,8 +10110,18 @@ class AITCMMSSystem:
         self.stats_active_label = ttk.Label(stats_frame, text="Active Assets: 0", font=('Arial', 10, 'bold'), foreground='green')
         self.stats_active_label.pack(side='left', padx=20)
 
+        # PM count statistics for active assets
+        self.stats_monthly_pm_label = ttk.Label(stats_frame, text="Monthly PMs: 0", font=('Arial', 10, 'bold'), foreground='blue')
+        self.stats_monthly_pm_label.pack(side='left', padx=20)
+
+        self.stats_six_month_pm_label = ttk.Label(stats_frame, text="6-Month PMs: 0", font=('Arial', 10, 'bold'), foreground='blue')
+        self.stats_six_month_pm_label.pack(side='left', padx=20)
+
+        self.stats_annual_pm_label = ttk.Label(stats_frame, text="Annual PMs: 0", font=('Arial', 10, 'bold'), foreground='blue')
+        self.stats_annual_pm_label.pack(side='left', padx=20)
+
         # Refresh stats button
-        ttk.Button(stats_frame, text="Refresh Stats", 
+        ttk.Button(stats_frame, text="Refresh Stats",
                 command=self.update_equipment_statistics).pack(side='right', padx=5)
         
         
@@ -10291,14 +10301,51 @@ class AITCMMSSystem:
             # This ensures the numbers add up correctly
             active_assets = total_assets - cannot_find_count - rtf_count
 
+            # Get PM counts for active assets only (excluding Cannot Find and Run to Failure)
+            # Monthly PM count
+            cursor.execute('''
+                SELECT COUNT(*) FROM equipment e
+                WHERE e.monthly = TRUE
+                AND e.status != %s
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
+                )
+            ''', ('Run to Failure', 'Missing'))
+            monthly_pm_count = cursor.fetchone()[0]
+
+            # 6-Month PM count
+            cursor.execute('''
+                SELECT COUNT(*) FROM equipment e
+                WHERE e.six_month = TRUE
+                AND e.status != %s
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
+                )
+            ''', ('Run to Failure', 'Missing'))
+            six_month_pm_count = cursor.fetchone()[0]
+
+            # Annual PM count
+            cursor.execute('''
+                SELECT COUNT(*) FROM equipment e
+                WHERE e.annual = TRUE
+                AND e.status != %s
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
+                )
+            ''', ('Run to Failure', 'Missing'))
+            annual_pm_count = cursor.fetchone()[0]
+
             # Update labels
             self.stats_total_label.config(text=f"Total Assets: {total_assets}")
             self.stats_active_label.config(text=f"Active Assets: {active_assets}")
             self.stats_cf_label.config(text=f"Cannot Find: {cannot_find_count}")
             self.stats_rtf_label.config(text=f"Run to Failure: {rtf_count}")
+            self.stats_monthly_pm_label.config(text=f"Monthly PMs: {monthly_pm_count}")
+            self.stats_six_month_pm_label.config(text=f"6-Month PMs: {six_month_pm_count}")
+            self.stats_annual_pm_label.config(text=f"Annual PMs: {annual_pm_count}")
 
             # Update status bar
-            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}")
+            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Monthly: {monthly_pm_count}, 6-Month: {six_month_pm_count}, Annual: {annual_pm_count}")
 
         except Exception as e:
             print(f"Error updating equipment statistics: {e}")
