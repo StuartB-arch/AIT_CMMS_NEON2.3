@@ -10147,6 +10147,19 @@ class AITCMMSSystem:
         self.equipment_location_combo.pack(side='left', padx=5)
         self.equipment_location_combo.bind('<<ComboboxSelected>>', self.filter_equipment_list)
 
+        # PM Cycle filters
+        ttk.Label(search_frame, text="PM Cycles:").pack(side='left', padx=(20, 5))
+        self.monthly_pm_filter_var = tk.BooleanVar(value=False)
+        self.six_month_pm_filter_var = tk.BooleanVar(value=False)
+        self.annual_pm_filter_var = tk.BooleanVar(value=False)
+
+        ttk.Checkbutton(search_frame, text="Monthly", variable=self.monthly_pm_filter_var,
+                       command=self.filter_equipment_list).pack(side='left', padx=2)
+        ttk.Checkbutton(search_frame, text="6-Month", variable=self.six_month_pm_filter_var,
+                       command=self.filter_equipment_list).pack(side='left', padx=2)
+        ttk.Checkbutton(search_frame, text="Annual", variable=self.annual_pm_filter_var,
+                       command=self.filter_equipment_list).pack(side='left', padx=2)
+
         # Clear filters button
         ttk.Button(search_frame, text="Clear Filters",
                   command=self.clear_equipment_filters).pack(side='left', padx=5)
@@ -18381,7 +18394,14 @@ class AITCMMSSystem:
             # Read search term directly from Entry widget (more reliable than StringVar)
             search_term = self.equipment_search_entry.get().lower() if hasattr(self, 'equipment_search_entry') else ''
             selected_location = self.equipment_location_var.get()
-            print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}'")
+
+            # Get PM cycle filter states
+            monthly_filter = self.monthly_pm_filter_var.get() if hasattr(self, 'monthly_pm_filter_var') else False
+            six_month_filter = self.six_month_pm_filter_var.get() if hasattr(self, 'six_month_pm_filter_var') else False
+            annual_filter = self.annual_pm_filter_var.get() if hasattr(self, 'annual_pm_filter_var') else False
+            any_pm_filter_active = monthly_filter or six_month_filter or annual_filter
+
+            print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}', PM Filters: Monthly={monthly_filter}, 6-Month={six_month_filter}, Annual={annual_filter}")
 
             # Clear existing items
             for item in self.equipment_tree.get_children():
@@ -18399,6 +18419,20 @@ class AITCMMSSystem:
 
                     if not location_match:
                         continue
+
+                    # Check PM cycle filters (if any are active)
+                    if any_pm_filter_active:
+                        has_monthly_pm = equipment[7] if len(equipment) > 7 else False
+                        has_six_month_pm = equipment[8] if len(equipment) > 8 else False
+                        has_annual_pm = equipment[9] if len(equipment) > 9 else False
+
+                        # Equipment must have at least one of the selected PM cycles
+                        pm_match = ((monthly_filter and has_monthly_pm) or
+                                   (six_month_filter and has_six_month_pm) or
+                                   (annual_filter and has_annual_pm))
+
+                        if not pm_match:
+                            continue
 
                     # Check if search term matches any field
                     searchable_fields = [
@@ -18463,6 +18497,15 @@ class AITCMMSSystem:
             self.equipment_search_entry.delete(0, 'end')
         self.equipment_search_var.set('')
         self.equipment_location_var.set("All Locations")
+
+        # Clear PM cycle filters
+        if hasattr(self, 'monthly_pm_filter_var'):
+            self.monthly_pm_filter_var.set(False)
+        if hasattr(self, 'six_month_pm_filter_var'):
+            self.six_month_pm_filter_var.set(False)
+        if hasattr(self, 'annual_pm_filter_var'):
+            self.annual_pm_filter_var.set(False)
+
         self.filter_equipment_list()
 
     def on_equipment_double_click(self, event):
