@@ -1261,15 +1261,28 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     outstanding_total_hours = outstanding_results[1] or 0.0
     outstanding_avg_hours = outstanding_results[2] or 0.0
     
-    # Get Cannot Find entries count (separate)
+    # Get Cannot Find entries count (separate) - using DISTINCT to match tab behavior
     cursor.execute('''
-        SELECT COUNT(*)
+        SELECT COUNT(DISTINCT bfm_equipment_no)
         FROM cannot_find_assets
         WHERE EXTRACT(YEAR FROM reported_date::date) = %s
         AND EXTRACT(MONTH FROM reported_date::date) = %s
+        AND status = 'Missing'
     ''', (year, month))
 
     cf_count = cursor.fetchone()[0] or 0
+
+    # Get details of Cannot Find assets reported this month
+    cursor.execute('''
+        SELECT bfm_equipment_no, description, location, reported_date, technician_name, reported_by
+        FROM cannot_find_assets
+        WHERE EXTRACT(YEAR FROM reported_date::date) = %s
+        AND EXTRACT(MONTH FROM reported_date::date) = %s
+        AND status = 'Missing'
+        ORDER BY reported_date DESC
+    ''', (year, month))
+
+    cannot_find_assets = cursor.fetchall()
 
     # Get Mark as Found entries for this month
     cursor.execute('''
@@ -1760,6 +1773,27 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     print(f"  Run to Failure Entries: {rtf_count}")
     print()
 
+    # Display detailed Cannot Find list if any assets were reported missing this month
+    if cf_count > 0:
+        print("CANNOT FIND ASSETS DETAILS:")
+        print(f"{'BFM Number':<15} {'Description':<30} {'Location':<20} {'Reported Date':<15} {'Technician':<20}")
+        print("-" * 110)
+        for asset in cannot_find_assets:
+            bfm_no = asset[0] or 'N/A'
+            desc = (asset[1][:27] + '...') if asset[1] and len(asset[1]) > 30 else (asset[1] or 'N/A')
+            loc = (asset[2][:17] + '...') if asset[2] and len(asset[2]) > 20 else (asset[2] or 'N/A')
+            # Format reported date properly - extract first 10 chars (YYYY-MM-DD)
+            reported_date = asset[3]
+            if reported_date:
+                reported = reported_date.strftime('%Y-%m-%d') if hasattr(reported_date, 'strftime') else str(reported_date)[:10]
+            else:
+                reported = 'N/A'
+            technician = (asset[4][:17] + '...') if asset[4] and len(asset[4]) > 20 else (asset[4] or 'N/A')
+            print(f"{bfm_no:<15} {desc:<30} {loc:<20} {reported:<15} {technician:<20}")
+        print()
+        print(f"Total Cannot Find Assets Reported: {cf_count}")
+        print()
+
     # Display detailed Mark as Found list if any assets were found this month
     if found_count > 0:
         print("MARK AS FOUND ASSETS DETAILS:")
@@ -1769,8 +1803,18 @@ def generate_monthly_summary_report(conn, month=None, year=None):
             bfm_no = asset[0] or 'N/A'
             desc = (asset[1][:27] + '...') if asset[1] and len(asset[1]) > 30 else (asset[1] or 'N/A')
             loc = (asset[2][:17] + '...') if asset[2] and len(asset[2]) > 20 else (asset[2] or 'N/A')
-            reported = asset[3] or 'N/A'
-            found_date = asset[4] or 'N/A'
+            # Format reported date properly
+            reported_date_val = asset[3]
+            if reported_date_val:
+                reported = reported_date_val.strftime('%Y-%m-%d') if hasattr(reported_date_val, 'strftime') else str(reported_date_val)[:10]
+            else:
+                reported = 'N/A'
+            # Format found date properly
+            found_date_val = asset[4]
+            if found_date_val:
+                found_date = found_date_val.strftime('%Y-%m-%d') if hasattr(found_date_val, 'strftime') else str(found_date_val)[:10]
+            else:
+                found_date = 'N/A'
             found_by = asset[5] or 'N/A'
             print(f"{bfm_no:<15} {desc:<30} {loc:<20} {reported:<15} {found_date:<15} {found_by:<15}")
         print()
@@ -2402,6 +2446,26 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             AND (status = 'Closed' OR status = 'Completed')
         ''', (year, month))
         cms_closed = cursor.fetchone()[0] or 0
+
+        # Get Cannot Find data for this month (reported missing)
+        cursor.execute('''
+            SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets
+            WHERE EXTRACT(YEAR FROM reported_date::date) = %s
+            AND EXTRACT(MONTH FROM reported_date::date) = %s
+            AND status = 'Missing'
+        ''', (year, month))
+        cf_count = cursor.fetchone()[0] or 0
+
+        # Get details of Cannot Find assets reported this month
+        cursor.execute('''
+            SELECT bfm_equipment_no, description, location, reported_date, technician_name, reported_by
+            FROM cannot_find_assets
+            WHERE EXTRACT(YEAR FROM reported_date::date) = %s
+            AND EXTRACT(MONTH FROM reported_date::date) = %s
+            AND status = 'Missing'
+            ORDER BY reported_date DESC
+        ''', (year, month))
+        cannot_find_assets = cursor.fetchall()
 
         # Get Mark as Found data for this month
         cursor.execute('''
@@ -3316,6 +3380,73 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ]))
         
             story.append(daily_table)
+
+        # ==================== CANNOT FIND ASSETS ====================
+        if cf_count > 0:
+            story.append(Spacer(1, 25))
+            story.append(Paragraph("CANNOT FIND ASSETS REPORTED", heading_style))
+            story.append(Spacer(1, 10))
+
+            # Summary paragraph
+            story.append(Paragraph(
+                f"<b>{cf_count}</b> asset(s) were reported as 'Cannot Find' during {month_name} {year}.",
+                body_style
+            ))
+            story.append(Spacer(1, 15))
+
+            # Build table of cannot find assets
+            cf_data = [['BFM Number', 'Description', 'Location', 'Reported Date', 'Technician']]
+
+            for asset in cannot_find_assets:
+                bfm_no = asset[0] or 'N/A'
+                desc = asset[1] or 'N/A'
+                # Truncate description if too long
+                if len(desc) > 30:
+                    desc = desc[:27] + '...'
+                loc = asset[2] or 'N/A'
+                # Truncate location if too long
+                if len(loc) > 15:
+                    loc = loc[:12] + '...'
+                reported_date = asset[3]
+                if reported_date:
+                    reported = reported_date.strftime('%Y-%m-%d') if hasattr(reported_date, 'strftime') else str(reported_date)[:10]
+                else:
+                    reported = 'N/A'
+                technician = asset[4] or asset[5] or 'N/A'
+                # Truncate technician if too long
+                if len(technician) > 18:
+                    technician = technician[:15] + '...'
+
+                cf_data.append([bfm_no, desc, loc, reported, technician])
+
+            cf_table = Table(cf_data, colWidths=[1.0*inch, 1.8*inch, 1.0*inch, 1.0*inch, 1.2*inch])
+            cf_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#c53030')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fff5f5')])
+            ]))
+
+            story.append(cf_table)
+            story.append(Spacer(1, 10))
+
+            # Add summary note
+            story.append(Paragraph(
+                f"<i>Note: These assets were reported as missing during {month_name} {year}. "
+                f"They remain in 'Cannot Find' status until located and marked as found.</i>",
+                ParagraphStyle('NoteStyle', parent=body_style, fontSize=9,
+                             textColor=colors.HexColor('#718096'), alignment=TA_LEFT)
+            ))
 
         # ==================== MARK AS FOUND ASSETS ====================
         if found_count > 0:
