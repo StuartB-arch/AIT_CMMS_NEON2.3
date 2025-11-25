@@ -249,13 +249,17 @@ class EquipmentManager:
         cursor.execute("SELECT COUNT(*) FROM equipment WHERE status = 'Missing'")
         stats['missing'] = cursor.fetchone()[0]
 
-        # Equipment with Monthly PM
+        # Equipment with Monthly PM - return both equipment count and annual workload
         cursor.execute("SELECT COUNT(*) FROM equipment WHERE monthly_pm = TRUE AND status = 'Active'")
-        stats['monthly_pm'] = cursor.fetchone()[0]
+        monthly_equipment = cursor.fetchone()[0]
+        stats['monthly_pm'] = monthly_equipment
+        stats['monthly_pm_annual_workload'] = monthly_equipment * 12
 
-        # Equipment with Annual PM
+        # Equipment with Annual PM - return both equipment count and annual workload
         cursor.execute("SELECT COUNT(*) FROM equipment WHERE annual_pm = TRUE AND status = 'Active'")
-        stats['annual_pm'] = cursor.fetchone()[0]
+        annual_equipment = cursor.fetchone()[0]
+        stats['annual_pm'] = annual_equipment
+        stats['annual_pm_annual_workload'] = annual_equipment * 1
 
         return stats
 

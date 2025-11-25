@@ -10433,7 +10433,9 @@ class AITCMMSSystem:
             active_assets = total_assets - cannot_find_count - rtf_count
 
             # Get PM counts for active assets only (excluding Cannot Find and Run to Failure)
-            # Monthly PM count
+            # Calculate ANNUAL PM WORKLOAD (total PMs per year, not just equipment count)
+
+            # Monthly PM count - multiply by 12 (12 times per year)
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
                 WHERE e.monthly_pm = TRUE
@@ -10442,9 +10444,10 @@ class AITCMMSSystem:
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
             ''', ('Run to Failure', 'Missing'))
-            monthly_pm_count = cursor.fetchone()[0]
+            monthly_equipment_count = cursor.fetchone()[0]
+            monthly_pm_count = monthly_equipment_count * 12  # 12 monthly PMs per year per asset
 
-            # 6-Month PM count
+            # 6-Month PM count - multiply by 2 (2 times per year)
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
                 WHERE e.six_month_pm = TRUE
@@ -10453,9 +10456,10 @@ class AITCMMSSystem:
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
             ''', ('Run to Failure', 'Missing'))
-            six_month_pm_count = cursor.fetchone()[0]
+            six_month_equipment_count = cursor.fetchone()[0]
+            six_month_pm_count = six_month_equipment_count * 2  # 2 six-month PMs per year per asset
 
-            # Annual PM count
+            # Annual PM count - multiply by 1 (1 time per year)
             cursor.execute('''
                 SELECT COUNT(*) FROM equipment e
                 WHERE e.annual_pm = TRUE
@@ -10464,19 +10468,20 @@ class AITCMMSSystem:
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
             ''', ('Run to Failure', 'Missing'))
-            annual_pm_count = cursor.fetchone()[0]
+            annual_equipment_count = cursor.fetchone()[0]
+            annual_pm_count = annual_equipment_count * 1  # 1 annual PM per year per asset
 
-            # Update labels
+            # Update labels - show annual PM workload
             self.stats_total_label.config(text=f"Total Assets: {total_assets}")
             self.stats_active_label.config(text=f"Active Assets: {active_assets}")
             self.stats_cf_label.config(text=f"Cannot Find: {cannot_find_count}")
             self.stats_rtf_label.config(text=f"Run to Failure: {rtf_count}")
-            self.stats_monthly_pm_label.config(text=f"Monthly PMs: {monthly_pm_count}")
-            self.stats_six_month_pm_label.config(text=f"6-Month PMs: {six_month_pm_count}")
-            self.stats_annual_pm_label.config(text=f"Annual PMs: {annual_pm_count}")
+            self.stats_monthly_pm_label.config(text=f"Monthly PMs: {monthly_pm_count}/year ({monthly_equipment_count} assets)")
+            self.stats_six_month_pm_label.config(text=f"6-Month PMs: {six_month_pm_count}/year ({six_month_equipment_count} assets)")
+            self.stats_annual_pm_label.config(text=f"Annual PMs: {annual_pm_count}/year ({annual_equipment_count} assets)")
 
             # Update status bar
-            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Monthly: {monthly_pm_count}, 6-Month: {six_month_pm_count}, Annual: {annual_pm_count}")
+            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Monthly PMs: {monthly_pm_count}/yr ({monthly_equipment_count} assets), 6-Month: {six_month_pm_count}/yr ({six_month_equipment_count} assets), Annual: {annual_pm_count}/yr ({annual_equipment_count} assets)")
 
         except Exception as e:
             print(f"Error updating equipment statistics: {e}")
