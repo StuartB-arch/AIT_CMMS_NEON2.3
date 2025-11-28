@@ -5337,7 +5337,7 @@ class AITCMMSSystem:
         ttk.Label(header_frame, text="PM Type:").grid(row=1, column=0, sticky='w', pady=5)
         pm_type_var = tk.StringVar(value='Annual')
         pm_type_combo = ttk.Combobox(header_frame, textvariable=pm_type_var, 
-                                    values=['Monthly', 'Six Month', 'Annual'], width=22)
+                                    values=['Weekly', 'Monthly', 'Six Month', 'Annual'], width=22)
         pm_type_combo.grid(row=1, column=1, sticky='w', padx=5, pady=5)
 
         # Estimated hours
@@ -5674,7 +5674,7 @@ class AITCMMSSystem:
         ttk.Label(header_frame, text="PM Type:").grid(row=1, column=0, sticky='w', pady=5)
         pm_type_var = tk.StringVar(value=orig_pm_type)
         pm_type_combo = ttk.Combobox(header_frame, textvariable=pm_type_var, 
-                                values=['Monthly', 'Six Month', 'Annual'], width=22)
+                                values=['Weekly', 'Monthly', 'Six Month', 'Annual'], width=22)
         pm_type_combo.grid(row=1, column=1, sticky='w', padx=5, pady=5)
 
         # Estimated hours (editable)
@@ -7731,7 +7731,7 @@ class AITCMMSSystem:
         ttk.Label(header_frame, text="PM Type:").grid(row=1, column=0, sticky='w', pady=5)
         pm_type_var = tk.StringVar(value='Annual')
         pm_type_combo = ttk.Combobox(header_frame, textvariable=pm_type_var, 
-                                    values=['Monthly', 'Six Month', 'Annual'], width=22)
+                                    values=['Weekly', 'Monthly', 'Six Month', 'Annual'], width=22)
         pm_type_combo.grid(row=1, column=1, sticky='w', padx=5, pady=5)
 
         # Estimated hours
@@ -9344,6 +9344,24 @@ class AITCMMSSystem:
             except Exception as e:
                 print(f"Note: Equipment photo column migration skipped: {e}")
 
+            # SCHEMA MIGRATION: Add weekly PM columns to equipment table
+            try:
+                cursor.execute('''
+                    ALTER TABLE equipment
+                    ADD COLUMN IF NOT EXISTS weekly_pm BOOLEAN DEFAULT FALSE
+                ''')
+                cursor.execute('''
+                    ALTER TABLE equipment
+                    ADD COLUMN IF NOT EXISTS last_weekly_pm TEXT
+                ''')
+                cursor.execute('''
+                    ALTER TABLE equipment
+                    ADD COLUMN IF NOT EXISTS next_weekly_pm TEXT
+                ''')
+                print("INFO: Weekly PM columns added successfully")
+            except Exception as e:
+                print(f"Note: Weekly PM column migration skipped: {e}")
+
             # Corrective Maintenance table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS corrective_maintenance (
@@ -10242,6 +10260,9 @@ class AITCMMSSystem:
         self.stats_active_label.pack(side='left', padx=20)
 
         # PM count statistics for active assets
+        self.stats_weekly_pm_label = ttk.Label(stats_frame, text="Weekly PMs: 0", font=('Arial', 10, 'bold'), foreground='blue')
+        self.stats_weekly_pm_label.pack(side='left', padx=20)
+
         self.stats_monthly_pm_label = ttk.Label(stats_frame, text="Monthly PMs: 0", font=('Arial', 10, 'bold'), foreground='blue')
         self.stats_monthly_pm_label.pack(side='left', padx=20)
 
@@ -10471,17 +10492,30 @@ class AITCMMSSystem:
             annual_equipment_count = cursor.fetchone()[0]
             annual_pm_count = annual_equipment_count * 1  # 1 annual PM per year per asset
 
+            # Weekly PM count - multiply by 52 (52 times per year)
+            cursor.execute('''
+                SELECT COUNT(*) FROM equipment e
+                WHERE e.weekly_pm = TRUE
+                AND e.status != %s
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
+                )
+            ''', ('Run to Failure', 'Missing'))
+            weekly_equipment_count = cursor.fetchone()[0]
+            weekly_pm_count = weekly_equipment_count * 52  # 52 weekly PMs per year per asset
+
             # Update labels - show annual PM workload
             self.stats_total_label.config(text=f"Total Assets: {total_assets}")
             self.stats_active_label.config(text=f"Active Assets: {active_assets}")
             self.stats_cf_label.config(text=f"Cannot Find: {cannot_find_count}")
             self.stats_rtf_label.config(text=f"Run to Failure: {rtf_count}")
+            self.stats_weekly_pm_label.config(text=f"Weekly PMs: {weekly_pm_count}/year ({weekly_equipment_count} assets)")
             self.stats_monthly_pm_label.config(text=f"Monthly PMs: {monthly_pm_count}/year ({monthly_equipment_count} assets)")
             self.stats_six_month_pm_label.config(text=f"6-Month PMs: {six_month_pm_count}/year ({six_month_equipment_count} assets)")
             self.stats_annual_pm_label.config(text=f"Annual PMs: {annual_pm_count}/year ({annual_equipment_count} assets)")
 
             # Update status bar
-            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Monthly PMs: {monthly_pm_count}/yr ({monthly_equipment_count} assets), 6-Month: {six_month_pm_count}/yr ({six_month_equipment_count} assets), Annual: {annual_pm_count}/yr ({annual_equipment_count} assets)")
+            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Weekly PMs: {weekly_pm_count}/yr ({weekly_equipment_count} assets), Monthly PMs: {monthly_pm_count}/yr ({monthly_equipment_count} assets), 6-Month: {six_month_pm_count}/yr ({six_month_equipment_count} assets), Annual: {annual_pm_count}/yr ({annual_equipment_count} assets)")
 
         except Exception as e:
             print(f"Error updating equipment statistics: {e}")
@@ -10614,8 +10648,8 @@ class AITCMMSSystem:
         # PM Type
         ttk.Label(form_frame, text="PM Type:").grid(row=row, column=0, sticky='w', pady=5)
         self.pm_type_var = tk.StringVar()
-        pm_type_combo = ttk.Combobox(form_frame, textvariable=self.pm_type_var, 
-                                   values=['Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'], width=20)
+        pm_type_combo = ttk.Combobox(form_frame, textvariable=self.pm_type_var,
+                                   values=['Weekly', 'Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'], width=20)
         # Bind PM type and equipment changes to template lookup
         pm_type_combo.bind('<<ComboboxSelected>>', lambda e: self.update_pm_completion_form_with_template())
         self.bfm_combo.bind('<KeyRelease>', lambda e: self.update_pm_completion_form_with_template())
@@ -11301,7 +11335,7 @@ class AITCMMSSystem:
             ttk.Label(fields_frame, text="PM Type:").grid(row=row, column=0, sticky='w', pady=5)
             pm_type_var = tk.StringVar(value=pm_type)
             pm_type_combo = ttk.Combobox(fields_frame, textvariable=pm_type_var,
-                                       values=['Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'],
+                                       values=['Weekly', 'Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'],
                                        width=20, state='readonly')
             pm_type_combo.grid(row=row, column=1, sticky='w', padx=5, pady=5)
             row += 1
@@ -17840,10 +17874,12 @@ class AITCMMSSystem:
         pm_frame = ttk.LabelFrame(scrollable_frame, text="PM Types", padding=10)
         pm_frame.grid(row=len(fields), column=0, columnspan=2, padx=10, pady=10, sticky='ew')
 
+        weekly_var = tk.BooleanVar(value=False)
         monthly_var = tk.BooleanVar(value=True)
         six_month_var = tk.BooleanVar(value=True)
         annual_var = tk.BooleanVar(value=True)
 
+        ttk.Checkbutton(pm_frame, text="Weekly PM", variable=weekly_var).pack(anchor='w')
         ttk.Checkbutton(pm_frame, text="Monthly PM", variable=monthly_var).pack(anchor='w')
         ttk.Checkbutton(pm_frame, text="Six Month PM", variable=six_month_var).pack(anchor='w')
         ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var).pack(anchor='w')
@@ -17897,9 +17933,9 @@ class AITCMMSSystem:
                     cursor.execute('''
                         INSERT INTO equipment
                         (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
-                         location, master_lin, monthly_pm, six_month_pm, annual_pm,
+                         location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
                          picture_1_data, picture_2_data)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         entries["SAP Material No:"].get(),
                         entries["BFM Equipment No:"].get(),
@@ -17907,6 +17943,7 @@ class AITCMMSSystem:
                         entries["Tool ID/Drawing No:"].get(),
                         entries["Location:"].get(),
                         entries["Master LIN:"].get(),
+                        weekly_var.get(),
                         monthly_var.get(),
                         six_month_var.get(),
                         annual_var.get(),
@@ -18049,9 +18086,13 @@ class AITCMMSSystem:
         current_status = equipment_data['status'] or 'Active'  # Status field
 
         # PM checkboxes
+        weekly_var = tk.BooleanVar(value=bool(equipment_data.get('weekly_pm', False)))
         monthly_var = tk.BooleanVar(value=bool(equipment_data['monthly_pm']))
         six_month_var = tk.BooleanVar(value=bool(equipment_data['six_month_pm']))
         annual_var = tk.BooleanVar(value=bool(equipment_data['annual_pm']))
+
+        weekly_cb = ttk.Checkbutton(pm_frame, text="Weekly PM", variable=weekly_var)
+        weekly_cb.pack(anchor='w')
 
         monthly_cb = ttk.Checkbutton(pm_frame, text="Monthly PM", variable=monthly_var)
         monthly_cb.pack(anchor='w')
@@ -18061,9 +18102,10 @@ class AITCMMSSystem:
 
         annual_cb = ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var)
         annual_cb.pack(anchor='w')
-        
+
         # Disable PM checkboxes if currently Cannot Find or Run to Failure
         if current_status in ['Run to Failure', 'Cannot Find']:
+            weekly_cb.config(state='disabled')
             monthly_cb.config(state='disabled')
             six_month_cb.config(state='disabled')
             annual_cb.config(state='disabled')
@@ -18139,9 +18181,11 @@ class AITCMMSSystem:
             
             # Disable PM options if Run to Failure is selected
             if run_to_failure_var.get():
+                weekly_cb.config(state='disabled')
                 monthly_cb.config(state='disabled')
                 six_month_cb.config(state='disabled')
                 annual_cb.config(state='disabled')
+                weekly_var.set(False)
                 monthly_var.set(False)
                 six_month_var.set(False)
                 annual_var.set(False)
@@ -18150,9 +18194,11 @@ class AITCMMSSystem:
                 tech_frame.pack_forget()
             elif cannot_find_var.get():
                 # ALSO disable PM options for Cannot Find assets
+                weekly_cb.config(state='disabled')
                 monthly_cb.config(state='disabled')
                 six_month_cb.config(state='disabled')
                 annual_cb.config(state='disabled')
+                weekly_var.set(False)
                 monthly_var.set(False)
                 six_month_var.set(False)
                 annual_var.set(False)
@@ -18160,6 +18206,7 @@ class AITCMMSSystem:
                 rtf_warning_label.pack_forget()
                 tech_frame.pack(anchor='w', pady=5, padx=20)
             else:
+                weekly_cb.config(state='normal')
                 monthly_cb.config(state='normal')
                 six_month_cb.config(state='normal')
                 annual_cb.config(state='normal')
@@ -18210,6 +18257,7 @@ class AITCMMSSystem:
                             tool_id_drawing_no = %s,
                             location = %s,
                             master_lin = %s,
+                            weekly_pm = %s,
                             monthly_pm = %s,
                             six_month_pm = %s,
                             annual_pm = %s,
@@ -18223,6 +18271,7 @@ class AITCMMSSystem:
                         entries["Tool ID/Drawing No:"].get(),
                         entries["Location:"].get(),
                         entries["Master LIN:"].get(),
+                        weekly_var.get(),
                         monthly_var.get(),
                         six_month_var.get(),
                         annual_var.get(),
@@ -18738,9 +18787,9 @@ class AITCMMSSystem:
             # Get equipment information
             cursor.execute('''
                 SELECT sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
-                    location, master_lin, monthly_pm, six_month_pm, annual_pm,
-                    last_monthly_pm, last_six_month_pm, last_annual_pm,
-                    next_monthly_pm, next_six_month_pm, next_annual_pm, status
+                    location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
+                    last_weekly_pm, last_monthly_pm, last_six_month_pm, last_annual_pm,
+                    next_weekly_pm, next_monthly_pm, next_six_month_pm, next_annual_pm, status
                 FROM equipment
                 WHERE bfm_equipment_no = %s
             ''', (bfm_no,))
@@ -18763,9 +18812,9 @@ class AITCMMSSystem:
             details_frame.pack(fill='x', padx=10, pady=10)
 
             # Unpack equipment data
-            (sap_no, bfm, description, tool_id, location, master_lin, monthly_pm,
-             six_month_pm, annual_pm, last_monthly, last_six_month, last_annual,
-             next_monthly, next_six_month, next_annual, status) = equipment_data
+            (sap_no, bfm, description, tool_id, location, master_lin, weekly_pm, monthly_pm,
+             six_month_pm, annual_pm, last_weekly, last_monthly, last_six_month, last_annual,
+             next_weekly, next_monthly, next_six_month, next_annual, status) = equipment_data
 
             # Display equipment details
             row = 0
@@ -18795,6 +18844,12 @@ class AITCMMSSystem:
 
             # Add PM schedule information
             pm_info = []
+            if weekly_pm:
+                pm_info.append(f"Weekly PM: Enabled")
+                pm_info.append(f"  Last Completed: {last_weekly or 'Never'}")
+                pm_info.append(f"  Next Due: {next_weekly or 'Not Scheduled'}")
+                pm_info.append("")
+
             if monthly_pm:
                 pm_info.append(f"Monthly PM: Enabled")
                 pm_info.append(f"  Last Completed: {last_monthly or 'Never'}")
@@ -18861,9 +18916,11 @@ class AITCMMSSystem:
             pm_types = []
 
             # Determine available PM types based on equipment configuration
-            (sap_no, bfm, description, tool_id, location, master_lin, monthly_pm,
+            (sap_no, bfm, description, tool_id, location, master_lin, weekly_pm, monthly_pm,
              six_month_pm, annual_pm, *_) = equipment_data
 
+            if weekly_pm:
+                pm_types.append('Weekly')
             if monthly_pm:
                 pm_types.append('Monthly')
             if six_month_pm:
