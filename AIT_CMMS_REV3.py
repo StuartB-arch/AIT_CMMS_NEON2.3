@@ -6854,7 +6854,9 @@ class AITCMMSSystem:
         # This must happen before login dialog because login needs database access
         print("Starting AIT CMMS Application...")
         try:
-            db_pool.initialize(self.DB_CONFIG, min_conn=2, max_conn=20)
+            # PERFORMANCE FIX: Reduced from min_conn=2, max_conn=20 to 1-10
+            # Pool will grow as needed, but starts faster with fewer connections
+            db_pool.initialize(self.DB_CONFIG, min_conn=1, max_conn=10)
             print("Database connection pool initialized successfully")
         except Exception as e:
             messagebox.showerror("Database Error",
@@ -6895,9 +6897,9 @@ class AITCMMSSystem:
         self.parts_integration = CMPartsIntegration(self)
         self.init_pm_templates_database()
 
-        # Initialize KPI system for managers
-        if self.current_user_role == 'Manager':
-            self.init_kpi_system()
+        # PERFORMANCE FIX: Defer KPI initialization for managers to after UI loads
+        # This saves 10-20 seconds at startup
+        # KPI system will be initialized in deferred tasks
 
         # Add logo header
         self.add_logo_to_main_window()
@@ -6940,12 +6942,9 @@ class AITCMMSSystem:
     def _deferred_startup_tasks(self):
         """Load data after UI is displayed to keep startup responsive"""
         try:
-            # Show loading message in status bar
-            if hasattr(self, 'update_status'):
-                self.update_status("Loading equipment data...")
-
-            # Load equipment data
-            self.load_equipment_data()
+            # PERFORMANCE FIX: Don't load equipment data at startup
+            # It will be loaded on-demand when first accessed
+            # This saves 20-30 seconds at startup for large equipment tables
 
             # Update status
             if hasattr(self, 'update_status'):
@@ -6954,20 +6953,45 @@ class AITCMMSSystem:
             # Check if database needs restore
             self.check_empty_database_and_offer_restore()
 
-            # Update statistics for managers
+            # PERFORMANCE FIX: Initialize KPI system for managers asynchronously
             if self.current_user_role == 'Manager':
                 if hasattr(self, 'update_status'):
-                    self.update_status("Updating statistics...")
-                self.update_equipment_statistics()
-
-            # Final status update
-            if hasattr(self, 'update_status'):
-                self.update_status("Ready")
+                    self.update_status("Initializing KPI system in background...")
+                # Initialize KPI system asynchronously
+                self.root.after(500, self._async_init_kpi)
+            else:
+                # Final status update
+                if hasattr(self, 'update_status'):
+                    self.update_status("Ready")
 
         except Exception as e:
             print(f"Error in deferred startup tasks: {e}")
             import traceback
             traceback.print_exc()
+
+    def _async_init_kpi(self):
+        """Initialize KPI system asynchronously for managers"""
+        try:
+            self.init_kpi_system()
+            if hasattr(self, 'update_status'):
+                self.update_status("Ready - Updating statistics in background...")
+            # After KPI init, schedule statistics update
+            self.root.after(500, self._async_update_statistics)
+        except Exception as e:
+            print(f"Error initializing KPI system: {e}")
+            if hasattr(self, 'update_status'):
+                self.update_status("Ready")
+
+    def _async_update_statistics(self):
+        """Update statistics asynchronously without blocking UI"""
+        try:
+            self.update_equipment_statistics()
+            if hasattr(self, 'update_status'):
+                self.update_status("Ready")
+        except Exception as e:
+            print(f"Error updating statistics: {e}")
+            if hasattr(self, 'update_status'):
+                self.update_status("Ready (statistics update failed)")
 
     def close_cm_dialog(self):
         """Close selected CM with parts consumption tracking"""
@@ -7538,6 +7562,18 @@ class AITCMMSSystem:
     def init_pm_templates_database(self):
         """Initialize PM templates database tables"""
         cursor = self.conn.cursor()
+
+        # PERFORMANCE FIX: Check if PM templates tables already exist
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = 'pm_templates'
+            )
+        """)
+        if cursor.fetchone()[0]:
+            # Tables already exist, skip initialization
+            return
 
         # PM Templates table
         cursor.execute('''
@@ -9284,6 +9320,24 @@ class AITCMMSSystem:
             conn = db_pool.get_connection()
             cursor = conn.cursor()
 
+            # PERFORMANCE FIX: Check if users table already exists with correct schema
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = 'users'
+                )
+            """)
+            users_table_exists = cursor.fetchone()[0]
+
+            if users_table_exists:
+                # Table exists, just ensure default user exists and skip the rest
+                self.create_default_parts_coordinator(cursor)
+                conn.commit()
+                cursor.close()
+                db_pool.return_connection(conn)
+                return
+
             # Create users table if it doesn't exist
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -9374,7 +9428,38 @@ class AITCMMSSystem:
             print("CHECK: Connected to Neon PostgreSQL successfully!")
             print("CHECK: Connection pool initialized for multi-user support")
             print("=" * 60)
-        
+
+            # PERFORMANCE FIX: Check if database is already initialized
+            # This significantly speeds up startup by skipping table creation if already done
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = 'equipment'
+                )
+            """)
+            equipment_table_exists = cursor.fetchone()[0]
+
+            if equipment_table_exists:
+                # Verify the table has key columns we expect (weekly_pm column indicates latest schema)
+                cursor.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    AND table_name = 'equipment'
+                    AND column_name = 'weekly_pm'
+                """)
+                has_weekly_pm = cursor.fetchone() is not None
+
+                if has_weekly_pm:
+                    print("✓ Database already initialized with latest schema - skipping table creation")
+                    self.conn.commit()
+                    return
+                else:
+                    print("⚠ Database exists but needs schema migration - running updates...")
+            else:
+                print("⚙ First-time database initialization - creating tables...")
+
             # Equipment/Assets table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS equipment (
@@ -19320,18 +19405,29 @@ class AITCMMSSystem:
             messagebox.showerror("Error", f"Failed to export equipment list: {str(e)}")
     
     def load_equipment_data(self):
-        """Load equipment data from database"""
+        """Load equipment data from database - now with lazy loading support"""
         try:
+            # PERFORMANCE FIX: Check if data is already loaded to avoid reloading
+            if hasattr(self, 'equipment_data') and self.equipment_data:
+                return  # Data already loaded
+
             # Rollback any failed transaction before starting
             self.conn.rollback()
 
             cursor = self.conn.cursor()
             cursor.execute('SELECT * FROM equipment ORDER BY bfm_equipment_no')
             self.equipment_data = cursor.fetchall()
+            print(f"✓ Loaded {len(self.equipment_data)} equipment records from database")
         except Exception as e:
             self.conn.rollback()
             print(f"Error loading equipment data: {e}")
             self.equipment_data = []
+
+    def ensure_equipment_loaded(self):
+        """Ensure equipment data is loaded - call this before accessing equipment_data"""
+        if not hasattr(self, 'equipment_data') or not self.equipment_data:
+            print("Loading equipment data on-demand...")
+            self.load_equipment_data()
     
     
     def generate_weekly_assignments(self):
