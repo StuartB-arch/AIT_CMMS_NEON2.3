@@ -347,9 +347,9 @@ class EquipmentHistory:
 
             # Count expected PMs
             expected_pms = 0
-            if equip_row[1] == 'X':  # Has monthly PM
+            if equip_row[1]:  # Has monthly PM (boolean)
                 expected_pms += 12
-            if equip_row[2] == 'X':  # Has annual PM
+            if equip_row[2]:  # Has annual PM (boolean)
                 expected_pms += 1
 
             # Count completed PMs
