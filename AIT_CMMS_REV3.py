@@ -1535,10 +1535,14 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     # ==================== OVERALL MAINTENANCE EFFICIENCY ====================
     # Define constants for efficiency calculation
     TOTAL_TECHNICIANS = 9
-    ANNUAL_HOURS_PER_TECHNICIAN = 1980
-    WEEKLY_AVAILABLE_HOURS = 342.69
-    MONTHLY_AVAILABLE_HOURS = (TOTAL_TECHNICIANS * ANNUAL_HOURS_PER_TECHNICIAN) / 12  # 1485.0 hours
+    ANNUAL_HOURS_PER_TECHNICIAN = 1900
+    WEEKLY_AVAILABLE_HOURS = 328.85
+    MONTHLY_AVAILABLE_HOURS = 1425.0  # Updated from 1485.0 hours
     TARGET_EFFICIENCY_RATE = 80.0
+
+    # Calculate Cannot Find hours (2 hours per asset)
+    HOURS_PER_CANNOT_FIND = 2.0
+    cannot_find_hours = cf_count * HOURS_PER_CANNOT_FIND
 
     # Calculate total maintenance hours (PM + Outstanding PM + CM)
     total_maintenance_hours = pm_total_hours + outstanding_total_hours + cm_total_hours
@@ -1558,6 +1562,10 @@ def generate_monthly_summary_report(conn, month=None, year=None):
     print(f"  Total Outstanding PM Hours: {outstanding_total_hours:.1f} hours")
     print(f"  Total CM Hours: {cm_total_hours:.1f} hours")
     print(f"  Total Maintenance Hours: {total_maintenance_hours:.1f} hours")
+    print()
+    print(f"  Cannot Find Assets Count: {cf_count}")
+    print(f"  Cannot Find Search Hours: {cannot_find_hours:.1f} hours")
+    print(f"    (Based on {HOURS_PER_CANNOT_FIND:.1f} hours per Cannot Find asset)")
     print()
     print(f"  Monthly Available Hours: {MONTHLY_AVAILABLE_HOURS:.1f} hours")
     print(f"    (Based on {TOTAL_TECHNICIANS} technicians × {ANNUAL_HOURS_PER_TECHNICIAN} hours/year ÷ 12 months)")
@@ -2730,10 +2738,14 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
 
         # Define constants for efficiency calculation
         TOTAL_TECHNICIANS = 9
-        ANNUAL_HOURS_PER_TECHNICIAN = 1980
-        WEEKLY_AVAILABLE_HOURS = 342.69
-        MONTHLY_AVAILABLE_HOURS = (TOTAL_TECHNICIANS * ANNUAL_HOURS_PER_TECHNICIAN) / 12  # 1485.0 hours
+        ANNUAL_HOURS_PER_TECHNICIAN = 1900
+        WEEKLY_AVAILABLE_HOURS = 328.85
+        MONTHLY_AVAILABLE_HOURS = 1425.0  # Updated from 1485.0 hours
         TARGET_EFFICIENCY_RATE = 80.0
+
+        # Calculate Cannot Find hours (2 hours per asset)
+        HOURS_PER_CANNOT_FIND = 2.0
+        cannot_find_hours = cf_count * HOURS_PER_CANNOT_FIND
 
         # Calculate total maintenance hours (PM + Outstanding PM + CM)
         total_maintenance_hours = pm_total_hours + outstanding_total_hours + cm_total_hours
@@ -2755,6 +2767,9 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ['Total PM Hours', f'{pm_total_hours:.1f} hours'],
             ['Total CM Hours', f'{cm_total_hours:.1f} hours'],
             ['Total Maintenance Hours', f'{total_maintenance_hours:.1f} hours'],
+            ['Cannot Find Assets Count', f'{cf_count}'],
+            ['Cannot Find Search Hours', f'{cannot_find_hours:.1f} hours'],
+            ['  (Based on)', f'{HOURS_PER_CANNOT_FIND:.1f} hours per Cannot Find asset'],
             ['Monthly Available Hours', f'{MONTHLY_AVAILABLE_HOURS:.1f} hours'],
             ['  (Based on)', f'{TOTAL_TECHNICIANS} technicians × {ANNUAL_HOURS_PER_TECHNICIAN} hrs/year ÷ 12 months'],
             ['  (Weekly Available)', f'{WEEKLY_AVAILABLE_HOURS:.2f} hours'],
@@ -2777,17 +2792,18 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 12),
-            ('LEFTPADDING', (0, 5), (0, 6), 24),  # Indent sub-items for calculation details
+            ('LEFTPADDING', (0, 6), (0, 6), 24),  # Indent sub-items for Cannot Find calculation
+            ('LEFTPADDING', (0, 8), (0, 9), 24),  # Indent sub-items for Available Hours calculation details
             ('RIGHTPADDING', (0, 0), (-1, -1), 12),
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             # Highlight efficiency rate and status rows
-            ('BACKGROUND', (0, 7), (-1, 7), colors.HexColor('#e0f2fe')),  # Light blue for efficiency rate
-            ('FONTNAME', (0, 7), (-1, 7), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 7), (-1, 7), 11),
-            ('BACKGROUND', (0, 9), (-1, 9), colors.HexColor('#f0fdf4') if efficiency_rate >= TARGET_EFFICIENCY_RATE else colors.HexColor('#fef2f2')),
-            ('TEXTCOLOR', (1, 9), (1, 9), status_color),
-            ('FONTNAME', (0, 9), (-1, 9), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#e0f2fe')),  # Light blue for efficiency rate
+            ('FONTNAME', (0, 10), (-1, 10), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 10), (-1, 10), 11),
+            ('BACKGROUND', (0, 12), (-1, 12), colors.HexColor('#f0fdf4') if efficiency_rate >= TARGET_EFFICIENCY_RATE else colors.HexColor('#fef2f2')),
+            ('TEXTCOLOR', (1, 12), (1, 12), status_color),
+            ('FONTNAME', (0, 12), (-1, 12), 'Helvetica-Bold'),
         ]))
 
         story.append(efficiency_table)
