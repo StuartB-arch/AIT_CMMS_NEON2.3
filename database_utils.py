@@ -64,7 +64,8 @@ class DatabaseConnectionPool:
                 keepalives_interval=5,     # Send keepalive every 5 seconds (more frequent)
                 keepalives_count=3,        # Close connection after 3 failed keepalives
                 # Connection timeout settings
-                connect_timeout=10         # 10 second connection timeout
+                # PERFORMANCE FIX: Increased from 10s to 30s for NEON cold starts
+                connect_timeout=30         # 30 second connection timeout (NEON free tier can be slow to wake)
             )
             print(f"Connection pool initialized: {min_conn}-{max_conn} connections with keepalive enabled")
 
