@@ -795,9 +795,9 @@ class PMSchedulingService:
             equipment_list.append(Equipment(
                 bfm_no=bfm_no,
                 description=row[1],
-                has_weekly=row[2] == 'X' if row[2] else False,
-                has_monthly=row[3] == 'X' if row[3] else False,
-                has_annual=row[4] == 'X' if row[4] else False,
+                has_weekly=bool(row[2]) if row[2] is not None else False,
+                has_monthly=bool(row[3]) if row[3] is not None else False,
+                has_annual=bool(row[4]) if row[4] is not None else False,
                 last_weekly_date=row[5],
                 last_monthly_date=row[6],
                 last_annual_date=row[7],
