@@ -126,8 +126,10 @@ class PMStatus(Enum):
 class Equipment:
     bfm_no: str
     description: str
+    has_weekly: bool
     has_monthly: bool
     has_annual: bool
+    last_weekly_date: Optional[str]
     last_monthly_date: Optional[str]
     last_annual_date: Optional[str]
     status: str
@@ -672,29 +674,54 @@ class PMAssignmentGenerator:
             # Store equipment priority for later sorting
             equipment_priority_map[equipment.bfm_no] = equipment.priority
 
-            # Check Monthly PM eligibility
-            if equipment.has_monthly:
-                monthly_result = self.eligibility_checker.check_eligibility(
-                    equipment, PMType.MONTHLY, week_start
+            # Check Weekly PM eligibility
+            if equipment.has_weekly:
+                weekly_result = self.eligibility_checker.check_eligibility(
+                    equipment, PMType.WEEKLY, week_start
                 )
-                if monthly_result.status == PMStatus.DUE:
+                if weekly_result.status == PMStatus.DUE:
                     potential_assignments.append(PMAssignment(
                         equipment.bfm_no,
-                        PMType.MONTHLY,
+                        PMType.WEEKLY,
                         equipment.description,
-                        monthly_result.priority_score,
-                        monthly_result.reason
+                        weekly_result.priority_score,
+                        weekly_result.reason
                     ))
 
-            # Check Annual PM eligibility (only if Monthly isn't being assigned)
+            # Check Monthly PM eligibility (only if Weekly isn't being assigned)
+            if equipment.has_monthly:
+                # Don't assign both Weekly and Monthly to same equipment in same week
+                has_weekly_assignment = any(
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.WEEKLY
+                    for a in potential_assignments
+                )
+
+                if not has_weekly_assignment:
+                    monthly_result = self.eligibility_checker.check_eligibility(
+                        equipment, PMType.MONTHLY, week_start
+                    )
+                    if monthly_result.status == PMStatus.DUE:
+                        potential_assignments.append(PMAssignment(
+                            equipment.bfm_no,
+                            PMType.MONTHLY,
+                            equipment.description,
+                            monthly_result.priority_score,
+                            monthly_result.reason
+                        ))
+
+            # Check Annual PM eligibility (only if Weekly or Monthly isn't being assigned)
             if equipment.has_annual:
-                # Don't assign both Monthly and Annual to same equipment in same week
+                # Don't assign both Weekly/Monthly and Annual to same equipment in same week
+                has_weekly_assignment = any(
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.WEEKLY
+                    for a in potential_assignments
+                )
                 has_monthly_assignment = any(
                     a.bfm_no == equipment.bfm_no and a.pm_type == PMType.MONTHLY
                     for a in potential_assignments
                 )
 
-                if not has_monthly_assignment:
+                if not has_weekly_assignment and not has_monthly_assignment:
                     annual_result = self.eligibility_checker.check_eligibility(
                         equipment, PMType.ANNUAL, week_start
                     )
@@ -917,8 +944,8 @@ class PMSchedulingService:
         """Get list of active equipment from database - EXCLUDES Cannot Find and Run to Failure"""
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT bfm_equipment_no, description, monthly_pm, annual_pm,
-                last_monthly_pm, last_annual_pm, COALESCE(status, 'Active') as status
+            SELECT bfm_equipment_no, description, weekly_pm, monthly_pm, annual_pm,
+                last_weekly_pm, last_monthly_pm, last_annual_pm, COALESCE(status, 'Active') as status
             FROM equipment
             WHERE (status = 'Active' OR status IS NULL)
             AND status NOT IN ('Run to Failure', 'Missing')
@@ -940,11 +967,13 @@ class PMSchedulingService:
             equipment_list.append(Equipment(
                 bfm_no=bfm_no,
                 description=row[1],
-                has_monthly=bool(row[2]),
-                has_annual=bool(row[3]),
-                last_monthly_date=row[4],
-                last_annual_date=row[5],
-                status=row[6],
+                has_weekly=bool(row[2]) if row[2] is not None else False,
+                has_monthly=bool(row[3]) if row[3] is not None else False,
+                has_annual=bool(row[4]) if row[4] is not None else False,
+                last_weekly_date=row[5],
+                last_monthly_date=row[6],
+                last_annual_date=row[7],
+                status=row[8],
                 priority=priority
             ))
 
