@@ -157,7 +157,8 @@ class CMPartsIntegration:
                     else:
                         tag = 'in_stock'
 
-                    parts_tree.insert('', 'end', values=part, tags=(tag,))
+                    # Ensure part_number is string when inserting into tree
+                    parts_tree.insert('', 'end', values=(str(part[0]), part[1], part[2], part[3]), tags=(tag,))
 
         # Initial load of all parts
         filter_parts()
@@ -213,7 +214,7 @@ class CMPartsIntegration:
             if selection:
                 item = parts_tree.item(selection[0])
                 values = item['values']
-                part_num = values[0]
+                part_num = str(values[0])  # Ensure part_number is string
                 desc = values[1]
                 selected_part_label.config(text=f"{part_num} - {desc}", foreground='black')
 
@@ -237,7 +238,7 @@ class CMPartsIntegration:
 
             item = parts_tree.item(selection[0])
             values = item['values']
-            part_num = values[0]
+            part_num = str(values[0])  # Ensure part_number is string
             desc = values[1]
             qty_available = float(values[3])  # Convert to float for comparison
 
@@ -317,7 +318,7 @@ class CMPartsIntegration:
                     # Get unit price for cost calculation
                     cursor.execute('''
                         SELECT unit_price FROM mro_inventory WHERE part_number = %s
-                    ''', (part['part_number'],))
+                    ''', (str(part['part_number']),))
                     result = cursor.fetchone()
                     unit_price = float(result[0]) if result and result[0] else 0.0
                     total_cost = unit_price * part['quantity']
@@ -328,7 +329,7 @@ class CMPartsIntegration:
                         (part_number, transaction_type, quantity, technician_name, notes, transaction_date)
                         VALUES (%s, %s, %s, %s, %s, %s)
                     ''', (
-                        part['part_number'],
+                        str(part['part_number']),
                         'Issue',
                         -part['quantity'],  # Negative for consumption
                         technician_name,
@@ -343,7 +344,7 @@ class CMPartsIntegration:
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         cm_number,
-                        part['part_number'],
+                        str(part['part_number']),
                         part['quantity'],
                         total_cost,
                         datetime.now(),
@@ -357,7 +358,7 @@ class CMPartsIntegration:
                         SET quantity_in_stock = quantity_in_stock - %s,
                             last_updated = %s
                         WHERE part_number = %s
-                    ''', (part['quantity'], datetime.now(), part['part_number']))
+                    ''', (part['quantity'], datetime.now(), str(part['part_number'])))
 
                 self.conn.commit()
 
