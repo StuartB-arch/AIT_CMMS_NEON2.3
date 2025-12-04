@@ -12427,32 +12427,47 @@ class AITCMMSSystem:
         filtered_count = 0
         for item_data in self.cm_original_data:
             # Check status filter (Status is at index 5)
-            status_match = selected_status == "All" or (len(item_data) > 5 and str(item_data[5]) == selected_status)
+            # Include both 'Closed' and 'Completed' when filtering for "Closed"
+            status = str(item_data[5]) if len(item_data) > 5 else ""
+            if selected_status == "All":
+                status_match = True
+            elif selected_status == "Closed":
+                status_match = status in ['Closed', 'Completed']
+            else:
+                status_match = status == selected_status
 
-            # Check month/year filter (Created date is at index 6)
+            # Check month/year filter
+            # For closed/completed CMs, use completion date (index 8), otherwise use created date (index 6)
             date_match = True
             if (selected_month != "All" or selected_year != "All") and len(item_data) > 6:
-                created_date_str = str(item_data[6])
+                # Determine which date to use
+                if status in ['Closed', 'Completed'] and len(item_data) > 8:
+                    # Use completion date for closed CMs (matches Monthly PM Summary logic)
+                    filter_date_str = str(item_data[8]) if item_data[8] else str(item_data[6])
+                else:
+                    # Use created date for open CMs
+                    filter_date_str = str(item_data[6])
+
                 try:
                     # Try parsing different date formats
-                    created_date = None
+                    parsed_date = None
                     for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
                         try:
-                            created_date = datetime.strptime(created_date_str.split('.')[0], fmt)
+                            parsed_date = datetime.strptime(filter_date_str.split('.')[0], fmt)
                             break
                         except ValueError:
                             continue
 
-                    if created_date:
+                    if parsed_date:
                         # Check month match
                         if selected_month != "All":
                             month_num = month_names.get(selected_month)
-                            if created_date.month != month_num:
+                            if parsed_date.month != month_num:
                                 date_match = False
 
                         # Check year match
                         if selected_year != "All":
-                            if created_date.year != int(selected_year):
+                            if parsed_date.year != int(selected_year):
                                 date_match = False
                     else:
                         # If we couldn't parse the date, exclude it from filtered results unless "All" is selected
@@ -12463,9 +12478,10 @@ class AITCMMSSystem:
                     if selected_month != "All" or selected_year != "All":
                         date_match = False
 
-            # Insert if both filters match
+            # Insert if both filters match (remove completion date from display - only show first 8 columns)
             if status_match and date_match:
-                self.cm_tree.insert('', 'end', values=item_data)
+                display_values = item_data[:8] if len(item_data) > 8 else item_data
+                self.cm_tree.insert('', 'end', values=display_values)
                 filtered_count += 1
         
     def clear_cm_filter(self):
@@ -12508,8 +12524,25 @@ class AITCMMSSystem:
                 return  # User cancelled
 
             # Query database for all CM fields
+            # Try to use completion_date if it exists, otherwise fall back to closed_date
             cursor = self.conn.cursor()
-            cursor.execute('''
+
+            # First, check if completion_date column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            has_completion_date = cursor.fetchone() is not None
+
+            # Build query based on available columns
+            if has_completion_date:
+                date_field = "COALESCE(completion_date, closed_date)"
+            else:
+                date_field = "closed_date"
+
+            cursor.execute(f'''
                 SELECT
                     cm_number,
                     bfm_equipment_no,
@@ -12518,7 +12551,7 @@ class AITCMMSSystem:
                     assigned_technician,
                     status,
                     created_date,
-                    closed_date,
+                    {date_field} as completion_date,
                     labor_hours,
                     root_cause,
                     corrective_action
@@ -12538,36 +12571,51 @@ class AITCMMSSystem:
             # Filter data based on current selections
             filtered_data = []
             for row in cm_data:
-                cm_number, bfm, desc, priority, assigned, status, created, closed, labor, root_cause, corrective = row
+                cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective = row
 
-                # Check status filter
-                if selected_status != "All" and status != selected_status:
-                    continue
+                # Check status filter - include both 'Closed' and 'Completed' to match Monthly PM Summary
+                if selected_status != "All":
+                    if selected_status == "Closed":
+                        # "Closed" filter should match both 'Closed' and 'Completed' statuses
+                        if status not in ['Closed', 'Completed']:
+                            continue
+                    elif status != selected_status:
+                        continue
 
                 # Check month/year filter
+                # IMPORTANT: For closed CMs, filter by completion/closed date (not created date)
+                # This matches the Monthly PM Summary report logic
                 if selected_month != "All" or selected_year != "All":
-                    if created:
+                    # Determine which date to use for filtering
+                    if selected_status == "Closed" or status in ['Closed', 'Completed']:
+                        # For closed CMs, use completion/closed date
+                        filter_date = completion
+                    else:
+                        # For open CMs, use created date
+                        filter_date = created
+
+                    if filter_date:
                         try:
-                            # Parse the created date
-                            created_date = None
-                            created_str = str(created)
+                            # Parse the filter date
+                            parsed_date = None
+                            date_str = str(filter_date)
                             for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
                                 try:
-                                    created_date = datetime.strptime(created_str.split('.')[0], fmt)
+                                    parsed_date = datetime.strptime(date_str.split('.')[0], fmt)
                                     break
                                 except ValueError:
                                     continue
 
-                            if created_date:
+                            if parsed_date:
                                 # Check month
                                 if selected_month != "All":
                                     month_num = month_names.get(selected_month)
-                                    if created_date.month != month_num:
+                                    if parsed_date.month != month_num:
                                         continue
 
                                 # Check year
                                 if selected_year != "All":
-                                    if created_date.year != int(selected_year):
+                                    if parsed_date.year != int(selected_year):
                                         continue
                             else:
                                 # Couldn't parse date, skip if filtering
@@ -12575,11 +12623,11 @@ class AITCMMSSystem:
                         except (ValueError, AttributeError):
                             continue
                     else:
-                        # No created date, skip if filtering
+                        # No date available, skip if filtering
                         continue
 
-                # Add to filtered data
-                filtered_data.append(row)
+                # Add to filtered data (use completion date as closed_date for display)
+                filtered_data.append((cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective))
 
             if not filtered_data:
                 messagebox.showwarning("No Data", "No CM records match the current filters.")
@@ -13068,20 +13116,36 @@ class AITCMMSSystem:
         """Load corrective maintenance data with enhanced source tracking"""
         try:
             cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT cm_number, bfm_equipment_no, description, priority, 
-                    assigned_technician, status, created_date, notes
-                FROM corrective_maintenance 
+
+            # Check if completion_date column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            has_completion_date = cursor.fetchone() is not None
+
+            # Build query based on available columns
+            if has_completion_date:
+                date_field = "COALESCE(completion_date, closed_date)"
+            else:
+                date_field = "closed_date"
+
+            cursor.execute(f'''
+                SELECT cm_number, bfm_equipment_no, description, priority,
+                    assigned_technician, status, created_date, notes, {date_field} as completion_date
+                FROM corrective_maintenance
                 ORDER BY created_date DESC
             ''')
-        
+
             # Clear existing items
             for item in self.cm_tree.get_children():
                 self.cm_tree.delete(item)
-        
-            # Add CM records
+
+            # Add CM records (include completion_date as hidden column for filtering)
             for idx, cm in enumerate(cursor.fetchall()):
-                cm_number, bfm_no, description, priority, assigned, status, created, notes = cm
+                cm_number, bfm_no, description, priority, assigned, status, created, notes, completion = cm
 
                 # Determine source
                 source = "SharePoint" if notes and "Imported from SharePoint" in notes else "Manual"
@@ -13089,14 +13153,15 @@ class AITCMMSSystem:
                 # Truncate description for display
                 display_desc = (description[:47] + '...') if description and len(description) > 50 else (description or '')
 
+                # Store completion date as a hidden column (last column) for filtering
                 self.cm_tree.insert('', 'end', values=(
-                    cm_number, bfm_no, display_desc, priority, assigned, status, created, source
+                    cm_number, bfm_no, display_desc, priority, assigned, status, created, source, completion
                 ))
 
                 # Yield to event loop every 50 items to keep UI responsive
                 if idx % 50 == 0:
                     self.root.update_idletasks()
-            
+
         except Exception as e:
             print(f"Error loading corrective maintenance: {e}")
 
