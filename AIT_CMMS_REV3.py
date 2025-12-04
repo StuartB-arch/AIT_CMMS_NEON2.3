@@ -12618,7 +12618,7 @@ class AITCMMSSystem:
             traceback.print_exc()
 
     def _generate_cm_pdf_report(self, file_path, cm_data, columns, status_filter, month_filter, year_filter):
-        """Generate a professional PDF report for CM data"""
+        """Generate a professional PDF report for CM data with word wrapping"""
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12655,12 +12655,26 @@ class AITCMMSSystem:
                 fontName='Helvetica-Bold'
             )
 
-            body_style = ParagraphStyle(
-                'CustomBody',
+            # Cell text style for word wrapping
+            cell_style = ParagraphStyle(
+                'CellText',
                 parent=styles['Normal'],
-                fontSize=9,
+                fontSize=7,
                 textColor=colors.HexColor('#2d3748'),
-                fontName='Helvetica'
+                fontName='Helvetica',
+                leading=9,
+                wordWrap='CJK'
+            )
+
+            # Header cell style
+            header_style = ParagraphStyle(
+                'HeaderText',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.whitesmoke,
+                fontName='Helvetica-Bold',
+                alignment=TA_CENTER,
+                leading=10
             )
 
             # Title
@@ -12712,26 +12726,48 @@ class AITCMMSSystem:
             story.append(Paragraph("Corrective Maintenance Records", heading_style))
             story.append(Spacer(1, 10))
 
-            # Prepare table data
-            # Adjust column widths for landscape mode (10.5 inches usable width)
-            table_data = [columns]  # Header row
+            # Prepare table data with Paragraph objects for word wrapping
+            # Header row with Paragraph objects
+            table_data = [[Paragraph(str(col), header_style) for col in columns]]
 
             for row in cm_data:
                 formatted_row = []
                 for i, value in enumerate(row):
-                    # Format the data for better display
-                    if value is None:
-                        formatted_row.append('')
-                    elif i == 2:  # Description - truncate if too long
+                    # Format the data for better display with word wrapping
+                    if value is None or value == '':
+                        cell_text = ''
+                    elif i == 2:  # Description - use Paragraph for word wrap
                         desc = str(value)
-                        formatted_row.append(desc[:100] + '...' if len(desc) > 100 else desc)
-                    elif i in [9, 10]:  # Root cause and corrective action - truncate
+                        cell_text = Paragraph(desc, cell_style)
+                    elif i in [9, 10]:  # Root cause and corrective action - use Paragraph for word wrap
                         text = str(value) if value else ''
-                        formatted_row.append(text[:150] + '...' if len(text) > 150 else text)
+                        cell_text = Paragraph(text, cell_style)
                     elif i == 8:  # Labor hours - format as number
-                        formatted_row.append(f"{value:.1f}" if value else '0.0')
+                        hours_val = f"{value:.1f}" if value else '0.0'
+                        cell_text = Paragraph(hours_val, cell_style)
+                    elif i in [6, 7]:  # Created Date and Closed Date - format dates
+                        if value:
+                            # Try to format the date nicely
+                            date_str = str(value).split('.')[0]  # Remove microseconds if present
+                            # Try to parse and reformat
+                            try:
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y']:
+                                    try:
+                                        date_obj = datetime.strptime(date_str, fmt)
+                                        date_str = date_obj.strftime('%Y-%m-%d')
+                                        break
+                                    except ValueError:
+                                        continue
+                            except:
+                                pass
+                            cell_text = Paragraph(date_str, cell_style)
+                        else:
+                            cell_text = Paragraph('', cell_style)
                     else:
-                        formatted_row.append(str(value))
+                        # All other fields - use Paragraph for consistent formatting
+                        cell_text = Paragraph(str(value), cell_style)
+
+                    formatted_row.append(cell_text)
 
                 table_data.append(formatted_row)
 
@@ -12743,8 +12779,8 @@ class AITCMMSSystem:
                 0.6*inch,   # Priority
                 0.85*inch,  # Assigned
                 0.6*inch,   # Status
-                0.85*inch,  # Created Date
-                0.85*inch,  # Closed Date
+                0.8*inch,   # Created Date
+                0.8*inch,   # Closed Date
                 0.5*inch,   # Labor Hours
                 1.5*inch,   # Root Cause
                 1.5*inch    # Corrective Actions
@@ -12757,17 +12793,12 @@ class AITCMMSSystem:
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5282')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
 
                 # Data rows styling
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2d3748')),
                 ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 7),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
 
                 # Grid
@@ -12777,8 +12808,8 @@ class AITCMMSSystem:
                 # Padding
                 ('LEFTPADDING', (0, 0), (-1, -1), 4),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 1), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
 
                 # Alternating row colors for better readability
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
