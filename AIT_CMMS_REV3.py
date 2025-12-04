@@ -12427,32 +12427,47 @@ class AITCMMSSystem:
         filtered_count = 0
         for item_data in self.cm_original_data:
             # Check status filter (Status is at index 5)
-            status_match = selected_status == "All" or (len(item_data) > 5 and str(item_data[5]) == selected_status)
+            # Include both 'Closed' and 'Completed' when filtering for "Closed"
+            status = str(item_data[5]) if len(item_data) > 5 else ""
+            if selected_status == "All":
+                status_match = True
+            elif selected_status == "Closed":
+                status_match = status in ['Closed', 'Completed']
+            else:
+                status_match = status == selected_status
 
-            # Check month/year filter (Created date is at index 6)
+            # Check month/year filter
+            # For closed/completed CMs, use completion date (index 8), otherwise use created date (index 6)
             date_match = True
             if (selected_month != "All" or selected_year != "All") and len(item_data) > 6:
-                created_date_str = str(item_data[6])
+                # Determine which date to use
+                if status in ['Closed', 'Completed'] and len(item_data) > 8:
+                    # Use completion date for closed CMs (matches Monthly PM Summary logic)
+                    filter_date_str = str(item_data[8]) if item_data[8] else str(item_data[6])
+                else:
+                    # Use created date for open CMs
+                    filter_date_str = str(item_data[6])
+
                 try:
                     # Try parsing different date formats
-                    created_date = None
+                    parsed_date = None
                     for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
                         try:
-                            created_date = datetime.strptime(created_date_str.split('.')[0], fmt)
+                            parsed_date = datetime.strptime(filter_date_str.split('.')[0], fmt)
                             break
                         except ValueError:
                             continue
 
-                    if created_date:
+                    if parsed_date:
                         # Check month match
                         if selected_month != "All":
                             month_num = month_names.get(selected_month)
-                            if created_date.month != month_num:
+                            if parsed_date.month != month_num:
                                 date_match = False
 
                         # Check year match
                         if selected_year != "All":
-                            if created_date.year != int(selected_year):
+                            if parsed_date.year != int(selected_year):
                                 date_match = False
                     else:
                         # If we couldn't parse the date, exclude it from filtered results unless "All" is selected
@@ -12463,9 +12478,10 @@ class AITCMMSSystem:
                     if selected_month != "All" or selected_year != "All":
                         date_match = False
 
-            # Insert if both filters match
+            # Insert if both filters match (remove completion date from display - only show first 8 columns)
             if status_match and date_match:
-                self.cm_tree.insert('', 'end', values=item_data)
+                display_values = item_data[:8] if len(item_data) > 8 else item_data
+                self.cm_tree.insert('', 'end', values=display_values)
                 filtered_count += 1
         
     def clear_cm_filter(self):
@@ -12508,8 +12524,25 @@ class AITCMMSSystem:
                 return  # User cancelled
 
             # Query database for all CM fields
+            # Try to use completion_date if it exists, otherwise fall back to closed_date
             cursor = self.conn.cursor()
-            cursor.execute('''
+
+            # First, check if completion_date column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            has_completion_date = cursor.fetchone() is not None
+
+            # Build query based on available columns
+            if has_completion_date:
+                date_field = "COALESCE(completion_date, closed_date)"
+            else:
+                date_field = "closed_date"
+
+            cursor.execute(f'''
                 SELECT
                     cm_number,
                     bfm_equipment_no,
@@ -12518,7 +12551,7 @@ class AITCMMSSystem:
                     assigned_technician,
                     status,
                     created_date,
-                    closed_date,
+                    {date_field} as completion_date,
                     labor_hours,
                     root_cause,
                     corrective_action
@@ -12538,36 +12571,51 @@ class AITCMMSSystem:
             # Filter data based on current selections
             filtered_data = []
             for row in cm_data:
-                cm_number, bfm, desc, priority, assigned, status, created, closed, labor, root_cause, corrective = row
+                cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective = row
 
-                # Check status filter
-                if selected_status != "All" and status != selected_status:
-                    continue
+                # Check status filter - include both 'Closed' and 'Completed' to match Monthly PM Summary
+                if selected_status != "All":
+                    if selected_status == "Closed":
+                        # "Closed" filter should match both 'Closed' and 'Completed' statuses
+                        if status not in ['Closed', 'Completed']:
+                            continue
+                    elif status != selected_status:
+                        continue
 
                 # Check month/year filter
+                # IMPORTANT: For closed CMs, filter by completion/closed date (not created date)
+                # This matches the Monthly PM Summary report logic
                 if selected_month != "All" or selected_year != "All":
-                    if created:
+                    # Determine which date to use for filtering
+                    if selected_status == "Closed" or status in ['Closed', 'Completed']:
+                        # For closed CMs, use completion/closed date
+                        filter_date = completion
+                    else:
+                        # For open CMs, use created date
+                        filter_date = created
+
+                    if filter_date:
                         try:
-                            # Parse the created date
-                            created_date = None
-                            created_str = str(created)
+                            # Parse the filter date
+                            parsed_date = None
+                            date_str = str(filter_date)
                             for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
                                 try:
-                                    created_date = datetime.strptime(created_str.split('.')[0], fmt)
+                                    parsed_date = datetime.strptime(date_str.split('.')[0], fmt)
                                     break
                                 except ValueError:
                                     continue
 
-                            if created_date:
+                            if parsed_date:
                                 # Check month
                                 if selected_month != "All":
                                     month_num = month_names.get(selected_month)
-                                    if created_date.month != month_num:
+                                    if parsed_date.month != month_num:
                                         continue
 
                                 # Check year
                                 if selected_year != "All":
-                                    if created_date.year != int(selected_year):
+                                    if parsed_date.year != int(selected_year):
                                         continue
                             else:
                                 # Couldn't parse date, skip if filtering
@@ -12575,11 +12623,11 @@ class AITCMMSSystem:
                         except (ValueError, AttributeError):
                             continue
                     else:
-                        # No created date, skip if filtering
+                        # No date available, skip if filtering
                         continue
 
-                # Add to filtered data
-                filtered_data.append(row)
+                # Add to filtered data (use completion date as closed_date for display)
+                filtered_data.append((cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective))
 
             if not filtered_data:
                 messagebox.showwarning("No Data", "No CM records match the current filters.")
@@ -12618,7 +12666,7 @@ class AITCMMSSystem:
             traceback.print_exc()
 
     def _generate_cm_pdf_report(self, file_path, cm_data, columns, status_filter, month_filter, year_filter):
-        """Generate a professional PDF report for CM data"""
+        """Generate a professional PDF report for CM data with word wrapping"""
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12655,12 +12703,26 @@ class AITCMMSSystem:
                 fontName='Helvetica-Bold'
             )
 
-            body_style = ParagraphStyle(
-                'CustomBody',
+            # Cell text style for word wrapping
+            cell_style = ParagraphStyle(
+                'CellText',
                 parent=styles['Normal'],
-                fontSize=9,
+                fontSize=7,
                 textColor=colors.HexColor('#2d3748'),
-                fontName='Helvetica'
+                fontName='Helvetica',
+                leading=9,
+                wordWrap='CJK'
+            )
+
+            # Header cell style
+            header_style = ParagraphStyle(
+                'HeaderText',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.whitesmoke,
+                fontName='Helvetica-Bold',
+                alignment=TA_CENTER,
+                leading=10
             )
 
             # Title
@@ -12712,26 +12774,48 @@ class AITCMMSSystem:
             story.append(Paragraph("Corrective Maintenance Records", heading_style))
             story.append(Spacer(1, 10))
 
-            # Prepare table data
-            # Adjust column widths for landscape mode (10.5 inches usable width)
-            table_data = [columns]  # Header row
+            # Prepare table data with Paragraph objects for word wrapping
+            # Header row with Paragraph objects
+            table_data = [[Paragraph(str(col), header_style) for col in columns]]
 
             for row in cm_data:
                 formatted_row = []
                 for i, value in enumerate(row):
-                    # Format the data for better display
-                    if value is None:
-                        formatted_row.append('')
-                    elif i == 2:  # Description - truncate if too long
+                    # Format the data for better display with word wrapping
+                    if value is None or value == '':
+                        cell_text = ''
+                    elif i == 2:  # Description - use Paragraph for word wrap
                         desc = str(value)
-                        formatted_row.append(desc[:100] + '...' if len(desc) > 100 else desc)
-                    elif i in [9, 10]:  # Root cause and corrective action - truncate
+                        cell_text = Paragraph(desc, cell_style)
+                    elif i in [9, 10]:  # Root cause and corrective action - use Paragraph for word wrap
                         text = str(value) if value else ''
-                        formatted_row.append(text[:150] + '...' if len(text) > 150 else text)
+                        cell_text = Paragraph(text, cell_style)
                     elif i == 8:  # Labor hours - format as number
-                        formatted_row.append(f"{value:.1f}" if value else '0.0')
+                        hours_val = f"{value:.1f}" if value else '0.0'
+                        cell_text = Paragraph(hours_val, cell_style)
+                    elif i in [6, 7]:  # Created Date and Closed Date - format dates
+                        if value:
+                            # Try to format the date nicely
+                            date_str = str(value).split('.')[0]  # Remove microseconds if present
+                            # Try to parse and reformat
+                            try:
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y']:
+                                    try:
+                                        date_obj = datetime.strptime(date_str, fmt)
+                                        date_str = date_obj.strftime('%Y-%m-%d')
+                                        break
+                                    except ValueError:
+                                        continue
+                            except:
+                                pass
+                            cell_text = Paragraph(date_str, cell_style)
+                        else:
+                            cell_text = Paragraph('', cell_style)
                     else:
-                        formatted_row.append(str(value))
+                        # All other fields - use Paragraph for consistent formatting
+                        cell_text = Paragraph(str(value), cell_style)
+
+                    formatted_row.append(cell_text)
 
                 table_data.append(formatted_row)
 
@@ -12743,8 +12827,8 @@ class AITCMMSSystem:
                 0.6*inch,   # Priority
                 0.85*inch,  # Assigned
                 0.6*inch,   # Status
-                0.85*inch,  # Created Date
-                0.85*inch,  # Closed Date
+                0.8*inch,   # Created Date
+                0.8*inch,   # Closed Date
                 0.5*inch,   # Labor Hours
                 1.5*inch,   # Root Cause
                 1.5*inch    # Corrective Actions
@@ -12757,17 +12841,12 @@ class AITCMMSSystem:
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5282')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
 
                 # Data rows styling
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2d3748')),
                 ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 7),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
 
                 # Grid
@@ -12777,8 +12856,8 @@ class AITCMMSSystem:
                 # Padding
                 ('LEFTPADDING', (0, 0), (-1, -1), 4),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 1), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
 
                 # Alternating row colors for better readability
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
@@ -13037,20 +13116,36 @@ class AITCMMSSystem:
         """Load corrective maintenance data with enhanced source tracking"""
         try:
             cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT cm_number, bfm_equipment_no, description, priority, 
-                    assigned_technician, status, created_date, notes
-                FROM corrective_maintenance 
+
+            # Check if completion_date column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            has_completion_date = cursor.fetchone() is not None
+
+            # Build query based on available columns
+            if has_completion_date:
+                date_field = "COALESCE(completion_date, closed_date)"
+            else:
+                date_field = "closed_date"
+
+            cursor.execute(f'''
+                SELECT cm_number, bfm_equipment_no, description, priority,
+                    assigned_technician, status, created_date, notes, {date_field} as completion_date
+                FROM corrective_maintenance
                 ORDER BY created_date DESC
             ''')
-        
+
             # Clear existing items
             for item in self.cm_tree.get_children():
                 self.cm_tree.delete(item)
-        
-            # Add CM records
+
+            # Add CM records (include completion_date as hidden column for filtering)
             for idx, cm in enumerate(cursor.fetchall()):
-                cm_number, bfm_no, description, priority, assigned, status, created, notes = cm
+                cm_number, bfm_no, description, priority, assigned, status, created, notes, completion = cm
 
                 # Determine source
                 source = "SharePoint" if notes and "Imported from SharePoint" in notes else "Manual"
@@ -13058,14 +13153,15 @@ class AITCMMSSystem:
                 # Truncate description for display
                 display_desc = (description[:47] + '...') if description and len(description) > 50 else (description or '')
 
+                # Store completion date as a hidden column (last column) for filtering
                 self.cm_tree.insert('', 'end', values=(
-                    cm_number, bfm_no, display_desc, priority, assigned, status, created, source
+                    cm_number, bfm_no, display_desc, priority, assigned, status, created, source, completion
                 ))
 
                 # Yield to event loop every 50 items to keep UI responsive
                 if idx % 50 == 0:
                     self.root.update_idletasks()
-            
+
         except Exception as e:
             print(f"Error loading corrective maintenance: {e}")
 
