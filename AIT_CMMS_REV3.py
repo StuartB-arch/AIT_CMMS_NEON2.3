@@ -12230,20 +12230,43 @@ class AITCMMSSystem:
         # Filter controls
         filter_frame = ttk.Frame(controls_frame)
         filter_frame.pack(fill='x')
-        
+
         ttk.Label(filter_frame, text="Filter by Status:").pack(side='left', padx=(0, 5))
-    
+
         # Create filter dropdown
         self.cm_filter_var = tk.StringVar(value="All")
-        self.cm_filter_dropdown = ttk.Combobox(filter_frame, textvariable=self.cm_filter_var, 
+        self.cm_filter_dropdown = ttk.Combobox(filter_frame, textvariable=self.cm_filter_var,
                                             values=["All", "Open", "Closed"],
                                             state="readonly", width=15)
         self.cm_filter_dropdown.pack(side='left', padx=5)
         self.cm_filter_dropdown.bind('<<ComboboxSelected>>', self.filter_cm_list)
-    
+
+        # Month and Year filter
+        ttk.Label(filter_frame, text="Month:").pack(side='left', padx=(20, 5))
+        self.cm_month_var = tk.StringVar(value="All")
+        months = ["All", "January", "February", "March", "April", "May", "June",
+                 "July", "August", "September", "October", "November", "December"]
+        self.cm_month_dropdown = ttk.Combobox(filter_frame, textvariable=self.cm_month_var,
+                                             values=months, state="readonly", width=12)
+        self.cm_month_dropdown.pack(side='left', padx=5)
+        self.cm_month_dropdown.bind('<<ComboboxSelected>>', self.filter_cm_list)
+
+        ttk.Label(filter_frame, text="Year:").pack(side='left', padx=(5, 5))
+        current_year = datetime.now().year
+        years = ["All"] + [str(year) for year in range(current_year - 5, current_year + 2)]
+        self.cm_year_var = tk.StringVar(value="All")
+        self.cm_year_dropdown = ttk.Combobox(filter_frame, textvariable=self.cm_year_var,
+                                            values=years, state="readonly", width=10)
+        self.cm_year_dropdown.pack(side='left', padx=5)
+        self.cm_year_dropdown.bind('<<ComboboxSelected>>', self.filter_cm_list)
+
         # Clear filter button
         ttk.Button(filter_frame, text="Clear Filter",
                 command=self.clear_cm_filter).pack(side='left', padx=5)
+
+        # Export Report button
+        ttk.Button(filter_frame, text="Export Report",
+                command=self.export_cm_report).pack(side='left', padx=5)
 
         # Second row of controls for Equipment Missing Parts
         controls_row2 = ttk.Frame(controls_frame)
@@ -12380,32 +12403,217 @@ class AITCMMSSystem:
             self.cm_filter_var.set("All")
     
     def filter_cm_list(self, event=None):
-        """Filter the CM list based on selected status"""
+        """Filter the CM list based on selected status, month, and year"""
         # Don't filter if no data is loaded yet
         if not hasattr(self, 'cm_original_data') or not self.cm_original_data:
-         
             return
-        
-        selected_filter = self.cm_filter_var.get()
-        
-    
+
+        selected_status = self.cm_filter_var.get()
+        selected_month = self.cm_month_var.get()
+        selected_year = self.cm_year_var.get()
+
         # Clear current tree
         for item in self.cm_tree.get_children():
             self.cm_tree.delete(item)
-    
+
+        # Month name to number mapping
+        month_names = {
+            "January": 1, "February": 2, "March": 3, "April": 4,
+            "May": 5, "June": 6, "July": 7, "August": 8,
+            "September": 9, "October": 10, "November": 11, "December": 12
+        }
+
         # Filter and display data
         filtered_count = 0
         for item_data in self.cm_original_data:
-            # Check if status matches (Status is at index 5)
-            if selected_filter == "All" or (len(item_data) > 5 and str(item_data[5]) == selected_filter):
+            # Check status filter (Status is at index 5)
+            status_match = selected_status == "All" or (len(item_data) > 5 and str(item_data[5]) == selected_status)
+
+            # Check month/year filter (Created date is at index 6)
+            date_match = True
+            if (selected_month != "All" or selected_year != "All") and len(item_data) > 6:
+                created_date_str = str(item_data[6])
+                try:
+                    # Try parsing different date formats
+                    created_date = None
+                    for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
+                        try:
+                            created_date = datetime.strptime(created_date_str.split('.')[0], fmt)
+                            break
+                        except ValueError:
+                            continue
+
+                    if created_date:
+                        # Check month match
+                        if selected_month != "All":
+                            month_num = month_names.get(selected_month)
+                            if created_date.month != month_num:
+                                date_match = False
+
+                        # Check year match
+                        if selected_year != "All":
+                            if created_date.year != int(selected_year):
+                                date_match = False
+                    else:
+                        # If we couldn't parse the date, exclude it from filtered results unless "All" is selected
+                        if selected_month != "All" or selected_year != "All":
+                            date_match = False
+                except (ValueError, AttributeError):
+                    # If date parsing fails, exclude from filter
+                    if selected_month != "All" or selected_year != "All":
+                        date_match = False
+
+            # Insert if both filters match
+            if status_match and date_match:
                 self.cm_tree.insert('', 'end', values=item_data)
                 filtered_count += 1
         
     def clear_cm_filter(self):
-        """Clear the filter and show all items"""
+        """Clear all filters and show all items"""
         self.cm_filter_var.set("All")
+        self.cm_month_var.set("All")
+        self.cm_year_var.set("All")
         self.filter_cm_list()
-   
+
+    def export_cm_report(self):
+        """Export CM report with all required fields, applying current filters"""
+        try:
+            # Get current filter values
+            selected_status = self.cm_filter_var.get()
+            selected_month = self.cm_month_var.get()
+            selected_year = self.cm_year_var.get()
+
+            # Build filter description for filename
+            filter_desc = ""
+            if selected_status != "All":
+                filter_desc += f"_{selected_status}"
+            if selected_month != "All":
+                filter_desc += f"_{selected_month}"
+            if selected_year != "All":
+                filter_desc += f"_{selected_year}"
+
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_filename = f"CM_Report{filter_desc}_{timestamp}.csv"
+
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                title="Export CM Report",
+                defaultextension=".csv",
+                initialfile=default_filename,
+                filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx"), ("All files", "*.*")]
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            # Query database for all CM fields
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT
+                    cm_number,
+                    bfm_equipment_no,
+                    description,
+                    priority,
+                    assigned_technician,
+                    status,
+                    created_date,
+                    closed_date,
+                    labor_hours,
+                    root_cause,
+                    corrective_action
+                FROM corrective_maintenance
+                ORDER BY created_date DESC
+            ''')
+
+            cm_data = cursor.fetchall()
+
+            # Month name to number mapping for filtering
+            month_names = {
+                "January": 1, "February": 2, "March": 3, "April": 4,
+                "May": 5, "June": 6, "July": 7, "August": 8,
+                "September": 9, "October": 10, "November": 11, "December": 12
+            }
+
+            # Filter data based on current selections
+            filtered_data = []
+            for row in cm_data:
+                cm_number, bfm, desc, priority, assigned, status, created, closed, labor, root_cause, corrective = row
+
+                # Check status filter
+                if selected_status != "All" and status != selected_status:
+                    continue
+
+                # Check month/year filter
+                if selected_month != "All" or selected_year != "All":
+                    if created:
+                        try:
+                            # Parse the created date
+                            created_date = None
+                            created_str = str(created)
+                            for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
+                                try:
+                                    created_date = datetime.strptime(created_str.split('.')[0], fmt)
+                                    break
+                                except ValueError:
+                                    continue
+
+                            if created_date:
+                                # Check month
+                                if selected_month != "All":
+                                    month_num = month_names.get(selected_month)
+                                    if created_date.month != month_num:
+                                        continue
+
+                                # Check year
+                                if selected_year != "All":
+                                    if created_date.year != int(selected_year):
+                                        continue
+                            else:
+                                # Couldn't parse date, skip if filtering
+                                continue
+                        except (ValueError, AttributeError):
+                            continue
+                    else:
+                        # No created date, skip if filtering
+                        continue
+
+                # Add to filtered data
+                filtered_data.append(row)
+
+            if not filtered_data:
+                messagebox.showwarning("No Data", "No CM records match the current filters.")
+                return
+
+            # Create DataFrame with proper column names
+            columns = [
+                'CM Number',
+                'BFM',
+                'Description',
+                'Priority',
+                'Assigned',
+                'Status',
+                'Created Date',
+                'Closed Date',
+                'Labor Hours',
+                'Root Cause Analysis',
+                'Corrective Actions'
+            ]
+
+            df = pd.DataFrame(filtered_data, columns=columns)
+
+            # Export based on file extension
+            if file_path.endswith('.xlsx'):
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            else:
+                df.to_csv(file_path, index=False)
+
+            messagebox.showinfo("Success", f"CM report exported successfully to:\n{file_path}\n\nTotal records: {len(filtered_data)}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export CM report: {str(e)}")
+            traceback.print_exc()
+
 
     def process_sharepoint_excel_file(self, file_path):
         """Process the SharePoint Excel file and import CMDATA"""
