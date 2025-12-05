@@ -583,13 +583,26 @@ class MROStockManager:
             messagebox.showwarning("Warning", "Please select a part to edit")
             return
 
+        # DEBUG: Get part number using multiple methods to diagnose issue
+        item = self.mro_tree.item(selected[0])
+        part_number_from_values = str(item['values'][0]) if item['values'] else 'N/A'
+        part_number_from_set = str(self.mro_tree.set(selected[0], 'Part Number'))
+
         # Use .set() method to get the displayed text from TreeView to preserve leading zeros
         # This avoids issues where TreeView converts "0319" to integer 319
-        part_number = str(self.mro_tree.set(selected[0], 'Part Number')).strip()
+        part_number = part_number_from_set.strip()
 
         try:
             # Get full part data - use explicit column list to ensure correct order
             with db_pool.get_cursor(commit=False) as cursor:
+                # First, let's check what part numbers exist in database that are similar
+                cursor.execute('''
+                    SELECT part_number FROM mro_inventory
+                    WHERE part_number LIKE %s OR part_number = %s
+                    ORDER BY part_number
+                ''', (f'%{part_number}%', part_number))
+                similar_parts = cursor.fetchall()
+
                 cursor.execute('''
                     SELECT id, name, part_number, model_number, equipment, engineering_system,
                            unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
@@ -602,10 +615,15 @@ class MROStockManager:
 
                 if not part_data:
                     # Enhanced error message for debugging
+                    similar_list = '\n'.join([f"  - '{p['part_number']}'" for p in similar_parts]) if similar_parts else '  (none)'
                     messagebox.showerror("Error",
                         f"Part not found in database.\n\n"
-                        f"Part number from tree: '{part_number}'\n"
+                        f"DEBUG INFO:\n"
+                        f"Part number from .set(): '{part_number_from_set}'\n"
+                        f"Part number from values[0]: '{part_number_from_values}'\n"
+                        f"Final part number used: '{part_number}'\n"
                         f"Length: {len(part_number)} characters\n\n"
+                        f"Similar part numbers in database:\n{similar_list}\n\n"
                         f"Try clicking the Refresh button and then edit again.")
                     return
 
@@ -1995,6 +2013,11 @@ class MROStockManager:
             for idx, row in enumerate(cursor.fetchall()):
                 # Access row data by column names (RealDictCursor returns dicts)
                 part_number = row['part_number']
+
+                # DEBUG: Log part numbers containing "319" to diagnose leading zero issue
+                if '319' in str(part_number):
+                    print(f"DEBUG: Loading part from DB: '{part_number}' (type: {type(part_number).__name__}, len: {len(part_number)})")
+
                 name = row['name']
                 model_number = row['model_number']
                 equipment = row['equipment']
@@ -2009,8 +2032,11 @@ class MROStockManager:
                 # Determine display status
                 display_status = '⚠️ LOW' if qty < min_stock else status
 
+                # Ensure part_number is explicitly a string to prevent TreeView auto-conversion
+                part_number_str = str(part_number)
+
                 self.mro_tree.insert('', 'end', values=(
-                    part_number,
+                    part_number_str,  # Explicitly use string version
                     name,
                     model_number,
                     equipment,
