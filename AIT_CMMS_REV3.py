@@ -10867,7 +10867,7 @@ class AITCMMSSystem:
         ttk.Label(form_frame, text="PM Type:").grid(row=row, column=0, sticky='w', pady=5)
         self.pm_type_var = tk.StringVar()
         pm_type_combo = ttk.Combobox(form_frame, textvariable=self.pm_type_var,
-                                   values=['Weekly', 'Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'], width=20)
+                                   values=['Weekly', 'Monthly', 'Six Month', 'Annual'], width=20)
         # Bind PM type and equipment changes to template lookup
         pm_type_combo.bind('<<ComboboxSelected>>', lambda e: self.update_pm_completion_form_with_template())
         self.bfm_combo.bind('<KeyRelease>', lambda e: self.update_pm_completion_form_with_template())
@@ -11553,7 +11553,7 @@ class AITCMMSSystem:
             ttk.Label(fields_frame, text="PM Type:").grid(row=row, column=0, sticky='w', pady=5)
             pm_type_var = tk.StringVar(value=pm_type)
             pm_type_combo = ttk.Combobox(fields_frame, textvariable=pm_type_var,
-                                       values=['Weekly', 'Monthly', 'Six Month', 'Annual', 'CANNOT FIND', 'Run to Failure'],
+                                       values=['Weekly', 'Monthly', 'Six Month', 'Annual'],
                                        width=20, state='readonly')
             pm_type_combo.grid(row=row, column=1, sticky='w', padx=5, pady=5)
             row += 1
