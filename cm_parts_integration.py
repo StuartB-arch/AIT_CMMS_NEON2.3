@@ -212,10 +212,9 @@ class CMPartsIntegration:
             """Update selected part label when user selects from available parts"""
             selection = parts_tree.selection()
             if selection:
-                item = parts_tree.item(selection[0])
-                values = item['values']
-                part_num = str(values[0])  # Ensure part_number is string
-                desc = values[1]
+                # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+                part_num = str(parts_tree.set(selection[0], 'Part Number')).strip()
+                desc = str(parts_tree.set(selection[0], 'Description')).strip()
                 selected_part_label.config(text=f"{part_num} - {desc}", foreground='black')
 
         parts_tree.bind('<<TreeviewSelect>>', on_part_select)
@@ -236,11 +235,11 @@ class CMPartsIntegration:
                 messagebox.showerror("Error", "Invalid quantity value")
                 return
 
-            item = parts_tree.item(selection[0])
-            values = item['values']
-            part_num = str(values[0])  # Ensure part_number is string
-            desc = values[1]
-            qty_available = float(values[3])  # Convert to float for comparison
+            # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+            # This avoids issues where TreeView converts "0319" to integer 319
+            part_num = str(parts_tree.set(selection[0], 'Part Number')).strip()
+            desc = str(parts_tree.set(selection[0], 'Description')).strip()
+            qty_available = float(parts_tree.set(selection[0], 'Qty Available'))  # Convert to float for comparison
 
             if qty_available <= 0:
                 messagebox.showerror("Part Out of Stock",
@@ -281,8 +280,8 @@ class CMPartsIntegration:
                 messagebox.showwarning("Warning", "Please select a part to remove from the consumed list")
                 return
 
-            item = consumed_tree.item(selection[0])
-            part_num = item['values'][0]
+            # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+            part_num = str(consumed_tree.set(selection[0], 'Part Number')).strip()
 
             # Remove from list
             consumed_parts[:] = [p for p in consumed_parts if p['part_number'] != part_num]

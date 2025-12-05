@@ -583,8 +583,9 @@ class MROStockManager:
             messagebox.showwarning("Warning", "Please select a part to edit")
             return
 
-        item = self.mro_tree.item(selected[0])
-        part_number = str(item['values'][0]).strip()  # Convert to string and strip whitespace
+        # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+        # This avoids issues where TreeView converts "0319" to integer 319
+        part_number = str(self.mro_tree.set(selected[0], 'Part Number')).strip()
 
         try:
             # Get full part data - use explicit column list to ensure correct order
@@ -866,9 +867,10 @@ class MROStockManager:
             messagebox.showwarning("Warning", "Please select a part to delete")
             return
 
-        item = self.mro_tree.item(selected[0])
-        part_number = str(item['values'][0])  # Convert to string to avoid type mismatch
-        part_name = item['values'][1]
+        # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+        # This avoids issues where TreeView converts "0319" to integer 319
+        part_number = str(self.mro_tree.set(selected[0], 'Part Number')).strip()
+        part_name = str(self.mro_tree.set(selected[0], 'Name')).strip()
 
         try:
             cursor = self.conn.cursor()
@@ -946,8 +948,9 @@ class MROStockManager:
             messagebox.showwarning("Warning", "Please select a part to view")
             return
 
-        item = self.mro_tree.item(selected[0])
-        part_number = str(item['values'][0]).strip()  # Convert to string and strip whitespace
+        # Use .set() method to get the displayed text from TreeView to preserve leading zeros
+        # This avoids issues where TreeView converts "0319" to integer 319
+        part_number = str(self.mro_tree.set(selected[0], 'Part Number')).strip()
 
         try:
             # Get full part data - use explicit column list to ensure correct order
