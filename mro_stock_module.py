@@ -596,20 +596,22 @@ class MROStockManager:
             # Get full part data - use explicit column list to ensure correct order
             with db_pool.get_cursor(commit=False) as cursor:
                 # First, let's check what part numbers exist in database that are similar
+                # Use TRIM() to handle leading/trailing spaces in part numbers
                 cursor.execute('''
                     SELECT part_number FROM mro_inventory
-                    WHERE part_number LIKE %s OR part_number = %s
+                    WHERE TRIM(part_number) LIKE %s OR TRIM(part_number) = %s
                     ORDER BY part_number
                 ''', (f'%{part_number}%', part_number))
                 similar_parts = cursor.fetchall()
 
+                # Use TRIM() to handle leading/trailing spaces in part numbers
                 cursor.execute('''
                     SELECT id, name, part_number, model_number, equipment, engineering_system,
                            unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
                            supplier, location, rack, row, bin, picture_1_path,
                            picture_2_path, picture_1_data, picture_2_data, notes,
                            last_updated, created_date, status
-                    FROM mro_inventory WHERE part_number = %s
+                    FROM mro_inventory WHERE TRIM(part_number) = %s
                 ''', (part_number,))
                 part_data = cursor.fetchone()
 
@@ -800,7 +802,8 @@ class MROStockManager:
 
                 # Get existing photo data and paths from database first
                 with db_pool.get_cursor(commit=False) as cursor:
-                    cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE part_number = %s', (part_number,))
+                    # Use TRIM() to handle leading/trailing spaces in part numbers
+                    cursor.execute('SELECT picture_1_path, picture_2_path, picture_1_data, picture_2_data FROM mro_inventory WHERE TRIM(part_number) = %s', (part_number,))
                     existing_data = cursor.fetchone()
                     existing_pic1_path = existing_data['picture_1_path'] if existing_data else None
                     existing_pic2_path = existing_data['picture_2_path'] if existing_data else None
@@ -831,6 +834,7 @@ class MROStockManager:
                 notes_text = fields['notes'].get('1.0', 'end-1c')
 
                 with db_pool.get_cursor(commit=True) as cursor:
+                    # Use TRIM() to handle leading/trailing spaces in part numbers
                     cursor.execute('''
                         UPDATE mro_inventory SET
                             name = %s, model_number = %s, equipment = %s, engineering_system = %s,
@@ -839,7 +843,7 @@ class MROStockManager:
                             row = %s, bin = %s, picture_1_path = %s, picture_2_path = %s,
                             picture_1_data = %s, picture_2_data = %s,
                             notes = %s, status = %s, last_updated = %s
-                        WHERE part_number = %s
+                        WHERE TRIM(part_number) = %s
                     ''', (
                         fields['name'].get(),
                         fields['model_number'].get(),
@@ -894,15 +898,17 @@ class MROStockManager:
             cursor = self.conn.cursor()
 
             # Check if part has any transaction history
+            # Use TRIM() to handle leading/trailing spaces in part numbers
             cursor.execute(
-                'SELECT COUNT(*) FROM mro_stock_transactions WHERE part_number = %s',
+                'SELECT COUNT(*) FROM mro_stock_transactions WHERE TRIM(part_number) = %s',
                 (part_number,)
             )
             transaction_count = cursor.fetchone()[0]
 
             # Check if part has been used in CM work orders
+            # Use TRIM() to handle leading/trailing spaces in part numbers
             cursor.execute(
-                'SELECT COUNT(*) FROM cm_parts_used WHERE part_number = %s',
+                'SELECT COUNT(*) FROM cm_parts_used WHERE TRIM(part_number) = %s',
                 (part_number,)
             )
             cm_usage_count = cursor.fetchone()[0]
@@ -922,8 +928,9 @@ class MROStockManager:
                 )
 
                 if result:
+                    # Use TRIM() to handle leading/trailing spaces in part numbers
                     cursor.execute(
-                        "UPDATE mro_inventory SET status = 'Inactive' WHERE part_number = %s",
+                        "UPDATE mro_inventory SET status = 'Inactive' WHERE TRIM(part_number) = %s",
                         (part_number,)
                     )
                     self.conn.commit()
@@ -944,7 +951,8 @@ class MROStockManager:
                                             f"This action cannot be undone!")
 
                 if result:
-                    cursor.execute('DELETE FROM mro_inventory WHERE part_number = %s', (part_number,))
+                    # Use TRIM() to handle leading/trailing spaces in part numbers
+                    cursor.execute('DELETE FROM mro_inventory WHERE TRIM(part_number) = %s', (part_number,))
                     self.conn.commit()
                     messagebox.showinfo("Success", "Part deleted successfully!")
                     self.refresh_mro_list()
@@ -973,13 +981,14 @@ class MROStockManager:
         try:
             # Get full part data - use explicit column list to ensure correct order
             with db_pool.get_cursor(commit=False) as cursor:
+                # Use TRIM() to handle leading/trailing spaces in part numbers
                 cursor.execute('''
                     SELECT id, name, part_number, model_number, equipment, engineering_system,
                            unit_of_measure, quantity_in_stock, unit_price, minimum_stock,
                            supplier, location, rack, row, bin, picture_1_path,
                            picture_2_path, picture_1_data, picture_2_data, notes,
                            last_updated, created_date, status
-                    FROM mro_inventory WHERE part_number = %s
+                    FROM mro_inventory WHERE TRIM(part_number) = %s
                 ''', (part_number,))
                 part_data = cursor.fetchone()
 
@@ -1219,6 +1228,7 @@ class MROStockManager:
         try:
             # Get CM usage data - use new cursor context
             with db_pool.get_cursor(commit=False) as cursor:
+                # Use TRIM() to handle leading/trailing spaces in part numbers
                 cursor.execute('''
                     SELECT
                         cp.cm_number,
@@ -1232,7 +1242,7 @@ class MROStockManager:
                         cp.notes
                     FROM cm_parts_used cp
                     LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
-                    WHERE cp.part_number = %s
+                    WHERE TRIM(cp.part_number) = %s
                     ORDER BY cp.recorded_date DESC
                     LIMIT 50
                 ''', (part_number,))
@@ -1255,10 +1265,11 @@ class MROStockManager:
                     ttk.Label(stats_frame, text=stats_text, font=('Arial', 10)).pack()
 
                     # Recent usage (last 30 days)
+                    # Use TRIM() to handle leading/trailing spaces in part numbers
                     cursor.execute('''
                         SELECT SUM(quantity_used)
                         FROM cm_parts_used
-                        WHERE part_number = %s
+                        WHERE TRIM(part_number) = %s
                         AND recorded_date::timestamp >= CURRENT_DATE - INTERVAL '30 days'
                     ''', (part_number,))
 
@@ -1341,6 +1352,7 @@ class MROStockManager:
     
         # Get all transactions - use new cursor context
         with db_pool.get_cursor(commit=False) as cursor:
+            # Use TRIM() to handle leading/trailing spaces in part numbers
             cursor.execute('''
                 SELECT
                     transaction_date,
@@ -1350,7 +1362,7 @@ class MROStockManager:
                     work_order,
                     notes
                 FROM mro_stock_transactions
-                WHERE part_number = %s
+                WHERE TRIM(part_number) = %s
                 ORDER BY transaction_date DESC
                 LIMIT 100
             ''', (part_number,))
@@ -1496,7 +1508,8 @@ class MROStockManager:
         
         # Get current stock
         cursor = self.conn.cursor()
-        cursor.execute('SELECT quantity_in_stock, unit_of_measure, name FROM mro_inventory WHERE part_number = %s', 
+        # Use TRIM() to handle leading/trailing spaces in part numbers
+        cursor.execute('SELECT quantity_in_stock, unit_of_measure, name FROM mro_inventory WHERE TRIM(part_number) = %s',
                       (part_number,))
         result = cursor.fetchone()
         current_stock = result[0] if result else 0
@@ -1547,10 +1560,11 @@ class MROStockManager:
                 
                 # Update stock
                 cursor = self.conn.cursor()
+                # Use TRIM() to handle leading/trailing spaces in part numbers
                 cursor.execute('''
-                    UPDATE mro_inventory 
+                    UPDATE mro_inventory
                     SET quantity_in_stock = %s, last_updated = %s
-                    WHERE part_number = %s
+                    WHERE TRIM(part_number) = %s
                 ''', (new_stock, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), part_number))
                 
                 # Log transaction
@@ -2158,11 +2172,12 @@ class MROStockManager:
                 # Update database with binary data
                 if pic1_data or pic2_data:
                     try:
+                        # Use TRIM() to handle leading/trailing spaces in part numbers
                         cursor.execute('''
                             UPDATE mro_inventory
                             SET picture_1_data = COALESCE(picture_1_data, %s),
                                 picture_2_data = COALESCE(picture_2_data, %s)
-                            WHERE part_number = %s
+                            WHERE TRIM(part_number) = %s
                         ''', (pic1_data, pic2_data, part_number))
                         migrated_count += 1
                     except Exception as e:
