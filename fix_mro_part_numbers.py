@@ -10,15 +10,39 @@ This script will:
 """
 
 import sys
-sys.path.insert(0, '/home/user/AIT_CMMS_NEON2.3')
+import os
+
+# Add the script directory to the path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, script_dir)
 
 from database_utils import db_pool
+
+# Database configuration (same as main application)
+DB_CONFIG = {
+    'host': 'ep-tiny-paper-ad8glt26-pooler.c-2.us-east-1.aws.neon.tech',
+    'port': 5432,
+    'database': 'neondb',
+    'user': 'neondb_owner',
+    'password': 'npg_2Nm6hyPVWiIH',
+    'sslmode': 'require'
+}
 
 def main():
     print("=" * 80)
     print("MRO Part Number Cleanup Script")
     print("=" * 80)
     print()
+
+    # Initialize database connection pool
+    print("Connecting to database...")
+    try:
+        db_pool.initialize(DB_CONFIG, min_conn=1, max_conn=2)
+        print("✓ Connected successfully")
+        print()
+    except Exception as e:
+        print(f"❌ Failed to connect to database: {str(e)}")
+        sys.exit(1)
 
     try:
         with db_pool.get_cursor(commit=False) as cursor:
