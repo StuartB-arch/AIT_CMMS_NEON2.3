@@ -1,0 +1,16 @@
+# Machine Learning Module Requirements
+# Install with: pip install -r ml/requirements.txt
+
+# Core ML library
+scikit-learn>=1.3.0
+
+# Data manipulation (already included in main requirements)
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Model serialization
+joblib>=1.3.0
+
+# Optional: For advanced models (not required for POC)
+# xgboost>=2.0.0
+# lightgbm>=4.0.0
