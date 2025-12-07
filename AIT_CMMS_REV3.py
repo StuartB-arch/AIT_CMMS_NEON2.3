@@ -5745,6 +5745,7 @@ class AITCMMSSystem:
                 checklist_items = []
                 special_instructions = []
                 safety_notes = []
+                all_text_lines = []  # Fallback: collect all text
 
                 # Track sections based on common PM document structure
                 current_section = None
@@ -5754,41 +5755,62 @@ class AITCMMSSystem:
                     if not text:
                         continue
 
+                    # Store all non-empty lines for fallback
+                    all_text_lines.append(text)
+
                     # Detect section headers (case-insensitive)
                     text_lower = text.lower()
 
-                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions']):
+                    # Check if this is a section header
+                    is_header = False
+                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions', 'tasks']):
                         current_section = 'checklist'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional', 'remarks']):
                         current_section = 'special'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe', 'hazard']):
                         current_section = 'safety'
+                        is_header = True
+
+                    if is_header:
                         continue
 
-                    # Extract numbered items or bullet points
-                    # Match patterns like "1.", "1)", "•", "-", "*" at start of line
-                    if re.match(r'^[\d]+[.)]\s*', text) or re.match(r'^[•\-*]\s+', text):
-                        # Remove numbering/bullets
-                        clean_text = re.sub(r'^[\d]+[.)]\s*', '', text)
-                        clean_text = re.sub(r'^[•\-*]\s+', '', clean_text)
+                    # More flexible pattern matching for checklist items
+                    # Matches: "1.", "1)", "•", "-", "*", "Step 1:", "Task 1", etc.
+                    is_list_item = (
+                        re.match(r'^[\d]+[.):\-\s]+', text) or  # Numbers with various separators
+                        re.match(r'^[•\-*○●◆◇■□▪▫]\s+', text) or  # Bullet points
+                        re.match(r'^step\s*\d+', text_lower) or  # "Step 1", "Step 2"
+                        re.match(r'^task\s*\d+', text_lower) or  # "Task 1", "Task 2"
+                        re.match(r'^\d+\s*[-–—]\s*', text)  # "1 - ", "1 – ", "1 — "
+                    )
 
-                        if current_section == 'safety':
-                            safety_notes.append(clean_text)
-                        elif current_section == 'special':
-                            special_instructions.append(clean_text)
-                        else:
-                            # Default to checklist if no section specified
-                            checklist_items.append(clean_text)
+                    if is_list_item:
+                        # Remove various numbering/bullet patterns
+                        clean_text = re.sub(r'^[\d]+[.):\-\s]+', '', text)
+                        clean_text = re.sub(r'^[•\-*○●◆◇■□▪▫]\s+', '', clean_text)
+                        clean_text = re.sub(r'^step\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^task\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^\d+\s*[-–—]\s*', '', clean_text)
+                        clean_text = clean_text.strip()
+
+                        if clean_text:  # Only add if there's content after removing numbering
+                            if current_section == 'safety':
+                                safety_notes.append(clean_text)
+                            elif current_section == 'special':
+                                special_instructions.append(clean_text)
+                            else:
+                                # Default to checklist
+                                checklist_items.append(clean_text)
                     else:
-                        # Non-numbered text goes to special instructions or safety based on section
+                        # Non-list-item text
                         if current_section == 'safety':
                             safety_notes.append(text)
                         elif current_section == 'special':
                             special_instructions.append(text)
                         elif current_section == 'checklist':
-                            # Add as checklist item if we're in checklist section
+                            # If we're in checklist section, treat all lines as checklist items
                             checklist_items.append(text)
 
                 # Process tables (common in PM documents)
@@ -5803,9 +5825,19 @@ class AITCMMSSystem:
                         if row_text:
                             # If row has multiple cells, join them
                             combined_text = ' - '.join(row_text)
-                            # Check if it looks like a step number
-                            if re.match(r'^\d+', combined_text):
-                                checklist_items.append(combined_text)
+                            all_text_lines.append(combined_text)
+
+                            # Don't be too strict - add table rows to checklist
+                            if combined_text and len(combined_text) > 3:  # At least some content
+                                # Remove numbering if present
+                                clean_combined = re.sub(r'^[\d]+[.):\-\s]+', '', combined_text).strip()
+                                if clean_combined:
+                                    checklist_items.append(clean_combined)
+
+                # FALLBACK: If no checklist items were found, use all text lines
+                if not checklist_items and all_text_lines:
+                    # Filter out very short lines (likely headers) and use the rest
+                    checklist_items = [line for line in all_text_lines if len(line) > 10]
 
                 return {
                     'checklist_items': checklist_items,
@@ -5814,7 +5846,7 @@ class AITCMMSSystem:
                 }
 
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}")
+                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}\n\nTraceback:\n{traceback.format_exc()}")
                 return None
 
         def upload_word_document():
@@ -6138,6 +6170,7 @@ class AITCMMSSystem:
                 checklist_items = []
                 special_instructions = []
                 safety_notes = []
+                all_text_lines = []  # Fallback: collect all text
 
                 # Track sections based on common PM document structure
                 current_section = None
@@ -6147,41 +6180,62 @@ class AITCMMSSystem:
                     if not text:
                         continue
 
+                    # Store all non-empty lines for fallback
+                    all_text_lines.append(text)
+
                     # Detect section headers (case-insensitive)
                     text_lower = text.lower()
 
-                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions']):
+                    # Check if this is a section header
+                    is_header = False
+                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions', 'tasks']):
                         current_section = 'checklist'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional', 'remarks']):
                         current_section = 'special'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe', 'hazard']):
                         current_section = 'safety'
+                        is_header = True
+
+                    if is_header:
                         continue
 
-                    # Extract numbered items or bullet points
-                    # Match patterns like "1.", "1)", "•", "-", "*" at start of line
-                    if re.match(r'^[\d]+[.)]\s*', text) or re.match(r'^[•\-*]\s+', text):
-                        # Remove numbering/bullets
-                        clean_text = re.sub(r'^[\d]+[.)]\s*', '', text)
-                        clean_text = re.sub(r'^[•\-*]\s+', '', clean_text)
+                    # More flexible pattern matching for checklist items
+                    # Matches: "1.", "1)", "•", "-", "*", "Step 1:", "Task 1", etc.
+                    is_list_item = (
+                        re.match(r'^[\d]+[.):\-\s]+', text) or  # Numbers with various separators
+                        re.match(r'^[•\-*○●◆◇■□▪▫]\s+', text) or  # Bullet points
+                        re.match(r'^step\s*\d+', text_lower) or  # "Step 1", "Step 2"
+                        re.match(r'^task\s*\d+', text_lower) or  # "Task 1", "Task 2"
+                        re.match(r'^\d+\s*[-–—]\s*', text)  # "1 - ", "1 – ", "1 — "
+                    )
 
-                        if current_section == 'safety':
-                            safety_notes.append(clean_text)
-                        elif current_section == 'special':
-                            special_instructions.append(clean_text)
-                        else:
-                            # Default to checklist if no section specified
-                            checklist_items.append(clean_text)
+                    if is_list_item:
+                        # Remove various numbering/bullet patterns
+                        clean_text = re.sub(r'^[\d]+[.):\-\s]+', '', text)
+                        clean_text = re.sub(r'^[•\-*○●◆◇■□▪▫]\s+', '', clean_text)
+                        clean_text = re.sub(r'^step\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^task\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^\d+\s*[-–—]\s*', '', clean_text)
+                        clean_text = clean_text.strip()
+
+                        if clean_text:  # Only add if there's content after removing numbering
+                            if current_section == 'safety':
+                                safety_notes.append(clean_text)
+                            elif current_section == 'special':
+                                special_instructions.append(clean_text)
+                            else:
+                                # Default to checklist
+                                checklist_items.append(clean_text)
                     else:
-                        # Non-numbered text goes to special instructions or safety based on section
+                        # Non-list-item text
                         if current_section == 'safety':
                             safety_notes.append(text)
                         elif current_section == 'special':
                             special_instructions.append(text)
                         elif current_section == 'checklist':
-                            # Add as checklist item if we're in checklist section
+                            # If we're in checklist section, treat all lines as checklist items
                             checklist_items.append(text)
 
                 # Process tables (common in PM documents)
@@ -6196,9 +6250,19 @@ class AITCMMSSystem:
                         if row_text:
                             # If row has multiple cells, join them
                             combined_text = ' - '.join(row_text)
-                            # Check if it looks like a step number
-                            if re.match(r'^\d+', combined_text):
-                                checklist_items.append(combined_text)
+                            all_text_lines.append(combined_text)
+
+                            # Don't be too strict - add table rows to checklist
+                            if combined_text and len(combined_text) > 3:  # At least some content
+                                # Remove numbering if present
+                                clean_combined = re.sub(r'^[\d]+[.):\-\s]+', '', combined_text).strip()
+                                if clean_combined:
+                                    checklist_items.append(clean_combined)
+
+                # FALLBACK: If no checklist items were found, use all text lines
+                if not checklist_items and all_text_lines:
+                    # Filter out very short lines (likely headers) and use the rest
+                    checklist_items = [line for line in all_text_lines if len(line) > 10]
 
                 return {
                     'checklist_items': checklist_items,
@@ -6207,7 +6271,7 @@ class AITCMMSSystem:
                 }
 
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}")
+                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}\n\nTraceback:\n{traceback.format_exc()}")
                 return None
 
         def upload_word_document():
@@ -8475,6 +8539,7 @@ class AITCMMSSystem:
                 checklist_items = []
                 special_instructions = []
                 safety_notes = []
+                all_text_lines = []  # Fallback: collect all text
 
                 # Track sections based on common PM document structure
                 current_section = None
@@ -8484,41 +8549,62 @@ class AITCMMSSystem:
                     if not text:
                         continue
 
+                    # Store all non-empty lines for fallback
+                    all_text_lines.append(text)
+
                     # Detect section headers (case-insensitive)
                     text_lower = text.lower()
 
-                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions']):
+                    # Check if this is a section header
+                    is_header = False
+                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions', 'tasks']):
                         current_section = 'checklist'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional', 'remarks']):
                         current_section = 'special'
-                        continue
-                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe']):
+                        is_header = True
+                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe', 'hazard']):
                         current_section = 'safety'
+                        is_header = True
+
+                    if is_header:
                         continue
 
-                    # Extract numbered items or bullet points
-                    # Match patterns like "1.", "1)", "•", "-", "*" at start of line
-                    if re.match(r'^[\d]+[.)]\s*', text) or re.match(r'^[•\-*]\s+', text):
-                        # Remove numbering/bullets
-                        clean_text = re.sub(r'^[\d]+[.)]\s*', '', text)
-                        clean_text = re.sub(r'^[•\-*]\s+', '', clean_text)
+                    # More flexible pattern matching for checklist items
+                    # Matches: "1.", "1)", "•", "-", "*", "Step 1:", "Task 1", etc.
+                    is_list_item = (
+                        re.match(r'^[\d]+[.):\-\s]+', text) or  # Numbers with various separators
+                        re.match(r'^[•\-*○●◆◇■□▪▫]\s+', text) or  # Bullet points
+                        re.match(r'^step\s*\d+', text_lower) or  # "Step 1", "Step 2"
+                        re.match(r'^task\s*\d+', text_lower) or  # "Task 1", "Task 2"
+                        re.match(r'^\d+\s*[-–—]\s*', text)  # "1 - ", "1 – ", "1 — "
+                    )
 
-                        if current_section == 'safety':
-                            safety_notes.append(clean_text)
-                        elif current_section == 'special':
-                            special_instructions.append(clean_text)
-                        else:
-                            # Default to checklist if no section specified
-                            checklist_items.append(clean_text)
+                    if is_list_item:
+                        # Remove various numbering/bullet patterns
+                        clean_text = re.sub(r'^[\d]+[.):\-\s]+', '', text)
+                        clean_text = re.sub(r'^[•\-*○●◆◇■□▪▫]\s+', '', clean_text)
+                        clean_text = re.sub(r'^step\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^task\s*\d+[:\-\s]*', '', clean_text, flags=re.IGNORECASE)
+                        clean_text = re.sub(r'^\d+\s*[-–—]\s*', '', clean_text)
+                        clean_text = clean_text.strip()
+
+                        if clean_text:  # Only add if there's content after removing numbering
+                            if current_section == 'safety':
+                                safety_notes.append(clean_text)
+                            elif current_section == 'special':
+                                special_instructions.append(clean_text)
+                            else:
+                                # Default to checklist
+                                checklist_items.append(clean_text)
                     else:
-                        # Non-numbered text goes to special instructions or safety based on section
+                        # Non-list-item text
                         if current_section == 'safety':
                             safety_notes.append(text)
                         elif current_section == 'special':
                             special_instructions.append(text)
                         elif current_section == 'checklist':
-                            # Add as checklist item if we're in checklist section
+                            # If we're in checklist section, treat all lines as checklist items
                             checklist_items.append(text)
 
                 # Process tables (common in PM documents)
@@ -8533,9 +8619,19 @@ class AITCMMSSystem:
                         if row_text:
                             # If row has multiple cells, join them
                             combined_text = ' - '.join(row_text)
-                            # Check if it looks like a step number
-                            if re.match(r'^\d+', combined_text):
-                                checklist_items.append(combined_text)
+                            all_text_lines.append(combined_text)
+
+                            # Don't be too strict - add table rows to checklist
+                            if combined_text and len(combined_text) > 3:  # At least some content
+                                # Remove numbering if present
+                                clean_combined = re.sub(r'^[\d]+[.):\-\s]+', '', combined_text).strip()
+                                if clean_combined:
+                                    checklist_items.append(clean_combined)
+
+                # FALLBACK: If no checklist items were found, use all text lines
+                if not checklist_items and all_text_lines:
+                    # Filter out very short lines (likely headers) and use the rest
+                    checklist_items = [line for line in all_text_lines if len(line) > 10]
 
                 return {
                     'checklist_items': checklist_items,
@@ -8544,7 +8640,7 @@ class AITCMMSSystem:
                 }
 
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}")
+                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}\n\nTraceback:\n{traceback.format_exc()}")
                 return None
 
         def upload_word_document():
