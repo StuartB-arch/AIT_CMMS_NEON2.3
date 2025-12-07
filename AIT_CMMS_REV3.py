@@ -8460,10 +8460,160 @@ class AITCMMSSystem:
                 step_content = '. '.join(step_text.split('. ')[1:]) if '. ' in step_text else step_text
                 step_text_var.set(step_content)
 
+        def parse_word_document(file_path):
+            """Parse Word document and extract PM template information"""
+            try:
+                if not DOCX_AVAILABLE:
+                    messagebox.showerror("Error",
+                        "python-docx library is not installed.\n\n"
+                        "Please install it using: pip install python-docx")
+                    return None
+
+                doc = Document(file_path)
+
+                # Extract all paragraphs and tables
+                checklist_items = []
+                special_instructions = []
+                safety_notes = []
+
+                # Track sections based on common PM document structure
+                current_section = None
+
+                for para in doc.paragraphs:
+                    text = para.text.strip()
+                    if not text:
+                        continue
+
+                    # Detect section headers (case-insensitive)
+                    text_lower = text.lower()
+
+                    if any(keyword in text_lower for keyword in ['checklist', 'procedure', 'steps', 'instructions']):
+                        current_section = 'checklist'
+                        continue
+                    elif any(keyword in text_lower for keyword in ['special instruction', 'notes', 'additional']):
+                        current_section = 'special'
+                        continue
+                    elif any(keyword in text_lower for keyword in ['safety', 'caution', 'warning', 'ppe']):
+                        current_section = 'safety'
+                        continue
+
+                    # Extract numbered items or bullet points
+                    # Match patterns like "1.", "1)", "•", "-", "*" at start of line
+                    if re.match(r'^[\d]+[.)]\s*', text) or re.match(r'^[•\-*]\s+', text):
+                        # Remove numbering/bullets
+                        clean_text = re.sub(r'^[\d]+[.)]\s*', '', text)
+                        clean_text = re.sub(r'^[•\-*]\s+', '', clean_text)
+
+                        if current_section == 'safety':
+                            safety_notes.append(clean_text)
+                        elif current_section == 'special':
+                            special_instructions.append(clean_text)
+                        else:
+                            # Default to checklist if no section specified
+                            checklist_items.append(clean_text)
+                    else:
+                        # Non-numbered text goes to special instructions or safety based on section
+                        if current_section == 'safety':
+                            safety_notes.append(text)
+                        elif current_section == 'special':
+                            special_instructions.append(text)
+                        elif current_section == 'checklist':
+                            # Add as checklist item if we're in checklist section
+                            checklist_items.append(text)
+
+                # Process tables (common in PM documents)
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_text = []
+                        for cell in row.cells:
+                            cell_text = cell.text.strip()
+                            if cell_text:
+                                row_text.append(cell_text)
+
+                        if row_text:
+                            # If row has multiple cells, join them
+                            combined_text = ' - '.join(row_text)
+                            # Check if it looks like a step number
+                            if re.match(r'^\d+', combined_text):
+                                checklist_items.append(combined_text)
+
+                return {
+                    'checklist_items': checklist_items,
+                    'special_instructions': '\n'.join(special_instructions),
+                    'safety_notes': '\n'.join(safety_notes)
+                }
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to parse Word document:\n{str(e)}")
+                return None
+
+        def upload_word_document():
+            """Open file dialog and import Word document content"""
+            if not DOCX_AVAILABLE:
+                messagebox.showerror("Error",
+                    "python-docx library is not installed.\n\n"
+                    "Please install it using: pip install python-docx\n"
+                    "or run: pip install -r requirements.txt")
+                return
+
+            file_path = filedialog.askopenfilename(
+                title="Select Word Document",
+                filetypes=[
+                    ("Word Documents", "*.docx"),
+                    ("All Files", "*.*")
+                ]
+            )
+
+            if not file_path:
+                return
+
+            # Parse the document
+            parsed_data = parse_word_document(file_path)
+
+            if not parsed_data:
+                return
+
+            # Confirm before auto-filling
+            checklist_count = len(parsed_data['checklist_items'])
+            has_instructions = bool(parsed_data['special_instructions'])
+            has_safety = bool(parsed_data['safety_notes'])
+
+            msg = f"Found in Word document:\n"
+            msg += f"  • {checklist_count} checklist items\n"
+            msg += f"  • Special Instructions: {'Yes' if has_instructions else 'No'}\n"
+            msg += f"  • Safety Notes: {'Yes' if has_safety else 'No'}\n\n"
+            msg += "This will replace current form content.\n\nContinue?"
+
+            if not messagebox.askyesno("Import Word Document", msg):
+                return
+
+            # Clear existing checklist
+            checklist_listbox.delete(0, 'end')
+
+            # Add checklist items
+            for i, item in enumerate(parsed_data['checklist_items'], 1):
+                checklist_listbox.insert('end', f"{i}. {item}")
+
+            # Set special instructions
+            if parsed_data['special_instructions']:
+                special_instructions_text.delete('1.0', 'end')
+                special_instructions_text.insert('1.0', parsed_data['special_instructions'])
+
+            # Set safety notes
+            if parsed_data['safety_notes']:
+                safety_notes_text.delete('1.0', 'end')
+                safety_notes_text.insert('1.0', parsed_data['safety_notes'])
+
+            messagebox.showinfo("Success",
+                f"Word document imported successfully!\n\n"
+                f"Added {checklist_count} checklist items.\n"
+                f"Review and adjust as needed before saving.")
+
         # NOW CREATE ALL BUTTONS - AFTER ALL FUNCTIONS ARE DEFINED
         ttk.Button(controls_subframe, text="Add Step", command=add_checklist_step).pack(side='left', padx=5)
         ttk.Button(controls_subframe, text="Remove Step", command=remove_checklist_step).pack(side='left', padx=5)
         ttk.Button(controls_subframe, text="Load Default Template", command=load_default_template).pack(side='left', padx=5)
+        ttk.Button(controls_subframe, text="Upload Word Doc", command=upload_word_document).pack(side='left', padx=5)
         ttk.Button(controls_subframe, text="Move Up", command=move_step_up).pack(side='left', padx=5)
         ttk.Button(controls_subframe, text="Move Down", command=move_step_down).pack(side='left', padx=5)
 
