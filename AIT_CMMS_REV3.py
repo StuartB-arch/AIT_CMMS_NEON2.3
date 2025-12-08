@@ -13191,7 +13191,9 @@ class AITCMMSSystem:
 
             # Get total count for pagination (only on reset/filter change)
             if reset or self.cm_total_count == 0:
-                count_query = f"SELECT COUNT(*) FROM corrective_maintenance WHERE 1=1 {query.split('WHERE 1=1')[1].split('ORDER BY')[0]}"
+                # Extract WHERE clause for count query
+                where_clause = query.split('WHERE 1=1', 1)[1] if 'WHERE 1=1' in query else ''
+                count_query = f"SELECT COUNT(*) FROM corrective_maintenance WHERE 1=1{where_clause}"
                 cursor.execute(count_query, params)
                 self.cm_total_count = cursor.fetchone()[0]
 
@@ -20157,7 +20159,9 @@ class AITCMMSSystem:
 
             # Get total count for pagination (only on reset/filter change)
             if reset or self.equip_total_count == 0:
-                count_query = f"SELECT COUNT(*) FROM equipment WHERE 1=1 {query.split('WHERE 1=1')[1].split('ORDER BY')[0]}"
+                # Extract WHERE clause for count query
+                where_clause = query.split('WHERE 1=1', 1)[1] if 'WHERE 1=1' in query else ''
+                count_query = f"SELECT COUNT(*) FROM equipment WHERE 1=1{where_clause}"
                 cursor.execute(count_query, params)
                 self.equip_total_count = cursor.fetchone()[0]
 
