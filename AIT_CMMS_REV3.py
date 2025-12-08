@@ -5205,9 +5205,8 @@ class AITCMMSSystem:
             # Step 5: Refresh all data displays
             progress_var.set("Refreshing application data...")
             self.root.update()
-        
-            # Refresh all displays
-            self.load_equipment_data()
+
+            # Refresh all displays (equipment list now uses direct SQL queries)
             self.refresh_equipment_list()
             self.load_recent_completions()
             self.load_corrective_maintenance()
@@ -7286,9 +7285,8 @@ class AITCMMSSystem:
     
         # Weekly PM target
         self.weekly_pm_target = 130
-    
-        # Initialize data storage
-        self.equipment_data = []
+
+        # Current week tracking
         self.current_week_start = self.get_week_start(datetime.now())
     
         # Create GUI based on user role
@@ -9968,6 +9966,101 @@ class AITCMMSSystem:
             print(f"Note: Could not create default parts coordinator user: {e}")
             # Don't fail initialization if user creation fails
 
+    def create_performance_indexes(self, cursor):
+        """Create functional indexes for case-insensitive searches - PERFORMANCE OPTIMIZATION"""
+        try:
+            print("=" * 60)
+            print("PERFORMANCE: Creating functional indexes for optimized searches...")
+            print("=" * 60)
+
+            # === Equipment Table Functional Indexes ===
+            # These support the LOWER() searches in filter_equipment_list
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_sap_lower
+                ON equipment(LOWER(sap_material_no))
+            ''')
+            print("✓ Created index: idx_equipment_sap_lower")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_bfm_lower
+                ON equipment(LOWER(bfm_equipment_no))
+            ''')
+            print("✓ Created index: idx_equipment_bfm_lower")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_description_lower
+                ON equipment(LOWER(description))
+            ''')
+            print("✓ Created index: idx_equipment_description_lower")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_location_lower
+                ON equipment(LOWER(location))
+            ''')
+            print("✓ Created index: idx_equipment_location_lower")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_master_lin_lower
+                ON equipment(LOWER(master_lin))
+            ''')
+            print("✓ Created index: idx_equipment_master_lin_lower")
+
+            # === Equipment Table Standard Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_location
+                ON equipment(location)
+            ''')
+            print("✓ Created index: idx_equipment_location")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_status
+                ON equipment(status)
+            ''')
+            print("✓ Created index: idx_equipment_status")
+
+            # Composite index for PM cycle filters
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_equipment_pm_cycles
+                ON equipment(monthly_pm, six_month_pm, annual_pm)
+            ''')
+            print("✓ Created index: idx_equipment_pm_cycles")
+
+            # === Corrective Maintenance Table Indexes ===
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_status
+                ON corrective_maintenance(status)
+            ''')
+            print("✓ Created index: idx_cm_status")
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cm_created_date
+                ON corrective_maintenance(created_date)
+            ''')
+            print("✓ Created index: idx_cm_created_date")
+
+            # Check if completion_date column exists before creating index
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            if cursor.fetchone():
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_cm_completion_date
+                    ON corrective_maintenance(completion_date)
+                ''')
+                print("✓ Created index: idx_cm_completion_date")
+
+            print("=" * 60)
+            print("✓ All performance indexes created successfully!")
+            print("=" * 60)
+
+        except Exception as e:
+            print(f"Warning: Could not create some performance indexes: {e}")
+            # Don't fail initialization if index creation fails
+
     def init_database(self):
         """Initialize comprehensive CMMS database with Neon PostgreSQL and connection pooling"""
         try:
@@ -10006,6 +10099,8 @@ class AITCMMSSystem:
 
                 if has_weekly_pm:
                     print("✓ Database already initialized with latest schema - skipping table creation")
+                    # Create performance indexes (will skip if already exist)
+                    self.create_performance_indexes(cursor)
                     self.conn.commit()
                     return
                 else:
@@ -10512,6 +10607,9 @@ class AITCMMSSystem:
             ''')
 
             print("CHECK: Performance indexes created successfully!")
+
+            # Create additional functional indexes for case-insensitive searches
+            self.create_performance_indexes(cursor)
 
             self.conn.commit()
             cursor.close()
@@ -12870,10 +12968,7 @@ class AITCMMSSystem:
         cm_list_frame.grid_rowconfigure(0, weight=1)
         cm_list_frame.grid_columnconfigure(0, weight=1)
 
-        # Initialize filter data storage
-        self.cm_original_data = []
-
-        # Load CM data
+        # Load CM data with SQL-based filtering
         self.load_corrective_maintenance_with_filter()
 
         # Add a separator for visual clarity
@@ -14107,9 +14202,7 @@ class AITCMMSSystem:
                                 
                                 # Refresh views based on user role
                                 if self.current_user_role == 'Manager':
-                                    # Manager has all views
-                                    if hasattr(self, 'load_equipment_data'):
-                                        self.load_equipment_data()
+                                    # Manager has all views (equipment list now uses direct SQL queries)
                                     if hasattr(self, 'load_recent_completions'):
                                         self.load_recent_completions()
                             
@@ -20474,31 +20567,10 @@ class AITCMMSSystem:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export equipment list: {str(e)}")
     
-    def load_equipment_data(self):
-        """Load equipment data from database - now with lazy loading support"""
-        try:
-            # PERFORMANCE FIX: Check if data is already loaded to avoid reloading
-            if hasattr(self, 'equipment_data') and self.equipment_data:
-                return  # Data already loaded
+    # REMOVED: load_equipment_data() and ensure_equipment_loaded()
+    # These methods cached equipment data in memory, which is no longer needed
+    # Equipment filtering now uses direct SQL queries for better performance
 
-            # Rollback any failed transaction before starting
-            self.conn.rollback()
-
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM equipment ORDER BY bfm_equipment_no')
-            self.equipment_data = cursor.fetchall()
-            print(f"✓ Loaded {len(self.equipment_data)} equipment records from database")
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Error loading equipment data: {e}")
-            self.equipment_data = []
-
-    def ensure_equipment_loaded(self):
-        """Ensure equipment data is loaded - call this before accessing equipment_data"""
-        if not hasattr(self, 'equipment_data') or not self.equipment_data:
-            print("Loading equipment data on-demand...")
-            self.load_equipment_data()
-    
     
     def generate_weekly_assignments(self):
         """
