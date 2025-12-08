@@ -57,6 +57,7 @@ class PMAssignment:
     description: str
     priority_score: int
     reason: str
+    has_custom_template: bool = False  # True if equipment has custom PM template
 
 
 class PMEligibilityResult(NamedTuple):
@@ -585,10 +586,41 @@ class PMAssignmentGenerator:
     def __init__(self, eligibility_checker: PMEligibilityChecker, root=None):
         self.eligibility_checker = eligibility_checker
         self.root = root  # Store root window for UI updates
+        self._custom_template_cache = None
+
+    def _load_custom_templates(self):
+        """Load all custom PM templates in one query for performance"""
+        print(f"DEBUG: Loading custom PM templates...")
+        cursor = self.eligibility_checker.completion_repo.conn.cursor()
+        cursor.execute('''
+            SELECT bfm_equipment_no, pm_type
+            FROM pm_templates
+        ''')
+
+        # Create a set of (bfm_no, pm_type) tuples for fast lookup
+        self._custom_template_cache = set()
+        for row in cursor.fetchall():
+            bfm_no = row[0]
+            pm_type = row[1]
+            self._custom_template_cache.add((bfm_no, pm_type))
+
+        print(f"DEBUG: Loaded {len(self._custom_template_cache)} custom PM templates")
+
+    def _has_custom_template(self, bfm_no: str, pm_type: PMType) -> bool:
+        """Check if equipment has custom template for given PM type"""
+        if self._custom_template_cache is None:
+            self._load_custom_templates()
+
+        # Convert PMType enum to string for comparison
+        pm_type_str = pm_type.value  # "Weekly", "Monthly", or "Annual"
+        return (bfm_no, pm_type_str) in self._custom_template_cache
 
     def generate_assignments(self, equipment_list: List[Equipment],
                            week_start: datetime, max_assignments: int) -> List[PMAssignment]:
         """Generate prioritized list of PM assignments"""
+
+        # Load custom templates once at the start
+        self._load_custom_templates()
 
         potential_assignments = []
         equipment_priority_map = {}
@@ -614,12 +646,14 @@ class PMAssignmentGenerator:
                     equipment, PMType.WEEKLY, week_start
                 )
                 if weekly_result.status == PMStatus.DUE:
+                    has_custom = self._has_custom_template(equipment.bfm_no, PMType.WEEKLY)
                     potential_assignments.append(PMAssignment(
                         equipment.bfm_no,
                         PMType.WEEKLY,
                         equipment.description,
                         weekly_result.priority_score,
-                        weekly_result.reason
+                        weekly_result.reason,
+                        has_custom
                     ))
 
             # Check Monthly PM eligibility
@@ -635,12 +669,14 @@ class PMAssignmentGenerator:
                         equipment, PMType.MONTHLY, week_start
                     )
                     if monthly_result.status == PMStatus.DUE:
+                        has_custom = self._has_custom_template(equipment.bfm_no, PMType.MONTHLY)
                         potential_assignments.append(PMAssignment(
                             equipment.bfm_no,
                             PMType.MONTHLY,
                             equipment.description,
                             monthly_result.priority_score,
-                            monthly_result.reason
+                            monthly_result.reason,
+                            has_custom
                         ))
 
             # Check Annual PM eligibility
@@ -660,25 +696,34 @@ class PMAssignmentGenerator:
                         equipment, PMType.ANNUAL, week_start
                     )
                     if annual_result.status == PMStatus.DUE:
+                        has_custom = self._has_custom_template(equipment.bfm_no, PMType.ANNUAL)
                         potential_assignments.append(PMAssignment(
                             equipment.bfm_no,
                             PMType.ANNUAL,
                             equipment.description,
                             annual_result.priority_score,
-                            annual_result.reason
+                            annual_result.reason,
+                            has_custom
                         ))
 
         print(f"DEBUG: Finished processing all {total_equipment} equipment items")
         print(f"DEBUG: Found {len(potential_assignments)} potential assignments")
 
-        # Sort by priority level first, then by priority_score
+        # Sort by: 1) Custom template (True first), 2) Equipment priority, 3) Priority score
         print(f"DEBUG: Sorting assignments by priority...")
+        print(f"DEBUG: Custom template count: {sum(1 for x in potential_assignments if x.has_custom_template)}")
         potential_assignments.sort(
             key=lambda x: (
-                equipment_priority_map.get(x.bfm_no, 99),
-                -x.priority_score
+                not x.has_custom_template,  # False (custom) comes before True (no custom)
+                equipment_priority_map.get(x.bfm_no, 99),  # Equipment priority (1, 2, 3, 99)
+                -x.priority_score  # Priority score (higher is better, so negate)
             )
         )
+
+        # Log some statistics
+        custom_count = sum(1 for x in potential_assignments if x.has_custom_template)
+        print(f"DEBUG: Prioritized {custom_count} PMs with custom templates")
+        print(f"DEBUG: Returning top {max_assignments} assignments")
 
         return potential_assignments[:max_assignments]
 
