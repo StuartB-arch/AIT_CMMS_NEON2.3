@@ -13076,6 +13076,11 @@ class AITCMMSSystem:
     def filter_cm_list(self, event=None, reset=True):
         """OPTIMIZED: Filter CM list with pagination - SQL WHERE clauses + LIMIT/OFFSET"""
         try:
+            # Check if cm_tree exists yet (might be called during tab creation)
+            if not hasattr(self, 'cm_tree'):
+                print("DEBUG: cm_tree not created yet, skipping filter")
+                return
+
             # Initialize pagination state if not already done
             if not hasattr(self, 'cm_offset'):
                 self.cm_offset = 0
