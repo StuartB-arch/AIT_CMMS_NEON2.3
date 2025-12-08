@@ -12966,12 +12966,6 @@ class AITCMMSSystem:
             has_completion_date = cursor.fetchone() is not None
 
             # Build query with filters applied at database level
-            # Cast all dates to timestamp to avoid type mismatch
-            if has_completion_date:
-                date_field = "COALESCE(completion_date::timestamp, closed_date::timestamp)"
-            else:
-                date_field = "closed_date::timestamp"
-
             query = f'''
                 SELECT cm_number, bfm_equipment_no, description, priority,
                     assigned_technician, status, created_date, notes
@@ -12996,21 +12990,62 @@ class AITCMMSSystem:
                 "September": 9, "October": 10, "November": 11, "December": 12
             }
 
-            # Date filtering - use SQL EXTRACT instead of Python date parsing
+            # Date filtering - simplified to avoid type casting issues
             if selected_month != "All" or selected_year != "All":
-                # For closed/completed CMs, use completion date; otherwise use created date
-                # Cast to timestamp to ensure type consistency
-                date_column = f"CASE WHEN status IN ('Closed', 'Completed') THEN {date_field} ELSE created_date::timestamp END"
+                # Build date filter conditions separately for closed and open CMs
+                date_conditions = []
+
+                if has_completion_date:
+                    # For closed/completed CMs: check completion_date first, fall back to closed_date
+                    closed_condition = "(status IN ('Closed', 'Completed') AND ("
+                    month_year_checks = []
+
+                    if selected_month != "All":
+                        month_num = month_names.get(selected_month)
+                        if month_num:
+                            month_year_checks.append(f"(EXTRACT(MONTH FROM COALESCE(completion_date, closed_date)::timestamp) = {month_num})")
+
+                    if selected_year != "All":
+                        month_year_checks.append(f"(EXTRACT(YEAR FROM COALESCE(completion_date, closed_date)::timestamp) = {int(selected_year)})")
+
+                    if month_year_checks:
+                        closed_condition += " AND ".join(month_year_checks) + "))"
+                        date_conditions.append(closed_condition)
+                else:
+                    # No completion_date column, use closed_date for closed CMs
+                    closed_condition = "(status IN ('Closed', 'Completed') AND ("
+                    month_year_checks = []
+
+                    if selected_month != "All":
+                        month_num = month_names.get(selected_month)
+                        if month_num:
+                            month_year_checks.append(f"(EXTRACT(MONTH FROM closed_date::timestamp) = {month_num})")
+
+                    if selected_year != "All":
+                        month_year_checks.append(f"(EXTRACT(YEAR FROM closed_date::timestamp) = {int(selected_year)})")
+
+                    if month_year_checks:
+                        closed_condition += " AND ".join(month_year_checks) + "))"
+                        date_conditions.append(closed_condition)
+
+                # For open CMs: use created_date
+                open_condition = "(status NOT IN ('Closed', 'Completed') AND ("
+                month_year_checks = []
 
                 if selected_month != "All":
                     month_num = month_names.get(selected_month)
                     if month_num:
-                        query += f" AND EXTRACT(MONTH FROM {date_column}) = %s"
-                        params.append(month_num)
+                        month_year_checks.append(f"(EXTRACT(MONTH FROM created_date::timestamp) = {month_num})")
 
                 if selected_year != "All":
-                    query += f" AND EXTRACT(YEAR FROM {date_column}) = %s"
-                    params.append(int(selected_year))
+                    month_year_checks.append(f"(EXTRACT(YEAR FROM created_date::timestamp) = {int(selected_year)})")
+
+                if month_year_checks:
+                    open_condition += " AND ".join(month_year_checks) + "))"
+                    date_conditions.append(open_condition)
+
+                if date_conditions:
+                    query += " AND (" + " OR ".join(date_conditions) + ")"
 
             query += " ORDER BY created_date DESC"
 
