@@ -26,13 +26,22 @@ try:
 
         # Import and run the main application
         print("Importing main application module...")
-        import AIT_CMMS_REV3
+        import tkinter as tk
+        from AIT_CMMS_REV3 import AITCMMSSystem
 
         print("Main module imported successfully")
         print("Starting main application...")
 
-        # This would normally start the tkinter mainloop
-        print("If you see this, imports succeeded but tkinter mainloop may have issues")
+        # Create and run the actual application
+        root = tk.Tk()
+        print("Tk root window created")
+
+        app = AITCMMSSystem(root)
+        print("AITCMMSSystem initialized successfully")
+
+        print("Starting mainloop...")
+        root.mainloop()
+        print("Application closed normally")
 
 except Exception as e:
     with open(log_file, 'a') as f:
