@@ -12938,104 +12938,102 @@ class AITCMMSSystem:
         self.load_missing_parts_list()
 
     def load_corrective_maintenance_with_filter(self):
-        """Wrapper for your existing load method that adds filter support"""
-    
-        # Initialize/clear filter data
-        self.cm_original_data = []
-    
-        # Call your existing load method
-        self.load_corrective_maintenance()
-    
-        # After loading, capture data for filtering
-        for item in self.cm_tree.get_children():
-            item_values = self.cm_tree.item(item, 'values')
-            self.cm_original_data.append(item_values)
-    
-        # Reset filter to show all
-        if hasattr(self, 'cm_filter_var'):
-            self.cm_filter_var.set("All")
+        """OPTIMIZED: Load CM data with filters applied at database level"""
+        # Simply call filter_cm_list which now does SQL-based filtering
+        self.filter_cm_list()
     
     def filter_cm_list(self, event=None):
-        """Filter the CM list based on selected status, month, and year"""
-        # Don't filter if no data is loaded yet
-        if not hasattr(self, 'cm_original_data') or not self.cm_original_data:
-            return
+        """OPTIMIZED: Filter CM list using SQL WHERE clauses instead of client-side filtering"""
+        try:
+            # Get filter values
+            selected_status = self.cm_filter_var.get() if hasattr(self, 'cm_filter_var') else "All"
+            selected_month = self.cm_month_var.get() if hasattr(self, 'cm_month_var') else "All"
+            selected_year = self.cm_year_var.get() if hasattr(self, 'cm_year_var') else "All"
 
-        selected_status = self.cm_filter_var.get()
-        selected_month = self.cm_month_var.get()
-        selected_year = self.cm_year_var.get()
+            # Clear current tree
+            for item in self.cm_tree.get_children():
+                self.cm_tree.delete(item)
 
-        # Clear current tree
-        for item in self.cm_tree.get_children():
-            self.cm_tree.delete(item)
+            cursor = self.conn.cursor()
 
-        # Month name to number mapping
-        month_names = {
-            "January": 1, "February": 2, "March": 3, "April": 4,
-            "May": 5, "June": 6, "July": 7, "August": 8,
-            "September": 9, "October": 10, "November": 11, "December": 12
-        }
+            # Check if completion_date column exists
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='corrective_maintenance'
+                AND column_name='completion_date'
+            """)
+            has_completion_date = cursor.fetchone() is not None
 
-        # Filter and display data
-        filtered_count = 0
-        for item_data in self.cm_original_data:
-            # Check status filter (Status is at index 5)
-            # Include both 'Closed' and 'Completed' when filtering for "Closed"
-            status = str(item_data[5]) if len(item_data) > 5 else ""
-            if selected_status == "All":
-                status_match = True
-            elif selected_status == "Closed":
-                status_match = status in ['Closed', 'Completed']
+            # Build query with filters applied at database level
+            if has_completion_date:
+                date_field = "COALESCE(completion_date, closed_date)"
             else:
-                status_match = status == selected_status
+                date_field = "closed_date"
 
-            # Check month/year filter
-            # For closed/completed CMs, use completion date (index 8), otherwise use created date (index 6)
-            date_match = True
-            if (selected_month != "All" or selected_year != "All") and len(item_data) > 6:
-                # Determine which date to use
-                if status in ['Closed', 'Completed'] and len(item_data) > 8:
-                    # Use completion date for closed CMs (matches Monthly PM Summary logic)
-                    filter_date_str = str(item_data[8]) if item_data[8] else str(item_data[6])
+            query = f'''
+                SELECT cm_number, bfm_equipment_no, description, priority,
+                    assigned_technician, status, created_date, notes
+                FROM corrective_maintenance
+                WHERE 1=1
+            '''
+            params = []
+
+            # Status filter - use SQL WHERE instead of Python filtering
+            if selected_status != "All":
+                if selected_status == "Closed":
+                    # Include both 'Closed' and 'Completed'
+                    query += " AND status IN ('Closed', 'Completed')"
                 else:
-                    # Use created date for open CMs
-                    filter_date_str = str(item_data[6])
+                    query += " AND status = %s"
+                    params.append(selected_status)
 
-                try:
-                    # Try parsing different date formats
-                    parsed_date = None
-                    for fmt in ['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y', '%m/%d/%y']:
-                        try:
-                            parsed_date = datetime.strptime(filter_date_str.split('.')[0], fmt)
-                            break
-                        except ValueError:
-                            continue
+            # Month name to number mapping
+            month_names = {
+                "January": 1, "February": 2, "March": 3, "April": 4,
+                "May": 5, "June": 6, "July": 7, "August": 8,
+                "September": 9, "October": 10, "November": 11, "December": 12
+            }
 
-                    if parsed_date:
-                        # Check month match
-                        if selected_month != "All":
-                            month_num = month_names.get(selected_month)
-                            if parsed_date.month != month_num:
-                                date_match = False
+            # Date filtering - use SQL EXTRACT instead of Python date parsing
+            if selected_month != "All" or selected_year != "All":
+                # For closed/completed CMs, use completion date; otherwise use created date
+                date_column = f"CASE WHEN status IN ('Closed', 'Completed') THEN {date_field} ELSE created_date END"
 
-                        # Check year match
-                        if selected_year != "All":
-                            if parsed_date.year != int(selected_year):
-                                date_match = False
-                    else:
-                        # If we couldn't parse the date, exclude it from filtered results unless "All" is selected
-                        if selected_month != "All" or selected_year != "All":
-                            date_match = False
-                except (ValueError, AttributeError):
-                    # If date parsing fails, exclude from filter
-                    if selected_month != "All" or selected_year != "All":
-                        date_match = False
+                if selected_month != "All":
+                    month_num = month_names.get(selected_month)
+                    if month_num:
+                        query += f" AND EXTRACT(MONTH FROM {date_column}) = %s"
+                        params.append(month_num)
 
-            # Insert if both filters match (remove completion date from display - only show first 8 columns)
-            if status_match and date_match:
-                display_values = item_data[:8] if len(item_data) > 8 else item_data
-                self.cm_tree.insert('', 'end', values=display_values)
+                if selected_year != "All":
+                    query += f" AND EXTRACT(YEAR FROM {date_column}) = %s"
+                    params.append(int(selected_year))
+
+            query += " ORDER BY created_date DESC"
+
+            # Execute optimized query
+            cursor.execute(query, params)
+
+            # Display results
+            filtered_count = 0
+            for idx, cm in enumerate(cursor.fetchall()):
+                cm_number, bfm_no, description, priority, assigned, status, created, notes = cm
+                # Truncate description for display
+                display_desc = (description[:47] + '...') if description and len(description) > 50 else description
+
+                self.cm_tree.insert('', 'end', values=(
+                    cm_number, bfm_no, display_desc, priority, assigned, status, created, notes
+                ))
                 filtered_count += 1
+
+                # Yield to event loop every 50 items to keep UI responsive
+                if idx % 50 == 0:
+                    self.root.update_idletasks()
+
+        except Exception as e:
+            print(f"Error filtering corrective maintenance: {e}")
+            messagebox.showerror("Error", f"Failed to filter CM data: {str(e)}")
         
     def clear_cm_filter(self):
         """Clear all filters and show all items"""
@@ -19848,44 +19846,23 @@ class AITCMMSSystem:
     
     
     def refresh_equipment_list(self):
-        """Refresh equipment list display"""
+        """OPTIMIZED: Refresh equipment list using SQL-based filtering"""
         try:
-            self.load_equipment_data()
-        
-            # Clear existing items
-            for item in self.equipment_tree.get_children():
-                self.equipment_tree.delete(item)
-        
-            # Add equipment to tree
-            for equipment in self.equipment_data:
-                if len(equipment) >= 9:
-                    self.equipment_tree.insert('', 'end', values=(
-                        equipment[1] or '',  # SAP
-                        equipment[2] or '',  # BFM
-                        equipment[3] or '',  # Description
-                        equipment[5] or '',  # Location
-                        equipment[6] or '',  # Master LIN
-                        'Yes' if equipment[7] else 'No',  # Monthly PM
-                        'Yes' if equipment[8] else 'No',  # Six Month PM
-                        'Yes' if equipment[9] else 'No',  # Annual PM
-                        equipment[16] or 'Active'  # Status
-                    ))
-        
             # Update statistics
             self.update_equipment_statistics()
 
             # Update location filter dropdown
             self.populate_location_filter()
 
-            # Update status
-            self.update_status(f"Equipment list refreshed - {len(self.equipment_data)} items")
-        
+            # Use the optimized filter method which now uses SQL
+            self.filter_equipment_list()
+
         except Exception as e:
             print(f"Error refreshing equipment list: {e}")
             messagebox.showerror("Error", f"Failed to refresh equipment list: {str(e)}")
     
     def filter_equipment_list(self, *args):
-        """Filter equipment list based on search term and location"""
+        """OPTIMIZED: Filter equipment list using SQL WHERE clauses instead of client-side filtering"""
         try:
             print("DEBUG: filter_equipment_list called")
 
@@ -19898,24 +19875,19 @@ class AITCMMSSystem:
             if hasattr(self, 'update_status'):
                 self.update_status("Filtering equipment...")
 
-            # Ensure equipment data is loaded
-            if not hasattr(self, 'equipment_data') or not self.equipment_data:
-                print("DEBUG: Loading equipment data...")
-                self.load_equipment_data()
-                # Also populate the location filter if not done yet
-                if hasattr(self, 'equipment_location_combo'):
-                    self.populate_location_filter()
-                print(f"DEBUG: Loaded {len(self.equipment_data)} equipment items")
+            # Populate location filter if not done yet
+            if hasattr(self, 'equipment_location_combo') and not hasattr(self, '_location_filter_populated'):
+                self.populate_location_filter()
+                self._location_filter_populated = True
 
-            # Read search term directly from Entry widget (more reliable than StringVar)
-            search_term = self.equipment_search_entry.get().lower() if hasattr(self, 'equipment_search_entry') else ''
-            selected_location = self.equipment_location_var.get()
+            # Read filter values
+            search_term = self.equipment_search_entry.get().strip() if hasattr(self, 'equipment_search_entry') else ''
+            selected_location = self.equipment_location_var.get() if hasattr(self, 'equipment_location_var') else "All Locations"
 
             # Get PM cycle filter states
             monthly_filter = self.monthly_pm_filter_var.get() if hasattr(self, 'monthly_pm_filter_var') else False
             six_month_filter = self.six_month_pm_filter_var.get() if hasattr(self, 'six_month_pm_filter_var') else False
             annual_filter = self.annual_pm_filter_var.get() if hasattr(self, 'annual_pm_filter_var') else False
-            any_pm_filter_active = monthly_filter or six_month_filter or annual_filter
 
             print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}', PM Filters: Monthly={monthly_filter}, 6-Month={six_month_filter}, Annual={annual_filter}")
 
@@ -19923,55 +19895,71 @@ class AITCMMSSystem:
             for item in self.equipment_tree.get_children():
                 self.equipment_tree.delete(item)
 
-            # Add filtered equipment
+            cursor = self.conn.cursor()
+
+            # Build SQL query with filters - OPTIMIZED: Only select columns needed for display
+            query = '''
+                SELECT sap_material_no, bfm_equipment_no, description, location, master_lin,
+                       monthly_pm, six_month_pm, annual_pm, status
+                FROM equipment
+                WHERE 1=1
+            '''
+            params = []
+
+            # Location filter
+            if selected_location != "All Locations":
+                query += " AND location = %s"
+                params.append(selected_location)
+
+            # PM cycle filters (OR logic - equipment must have at least one selected PM type)
+            if monthly_filter or six_month_filter or annual_filter:
+                pm_conditions = []
+                if monthly_filter:
+                    pm_conditions.append("monthly_pm = TRUE")
+                if six_month_filter:
+                    pm_conditions.append("six_month_pm = TRUE")
+                if annual_filter:
+                    pm_conditions.append("annual_pm = TRUE")
+                query += f" AND ({' OR '.join(pm_conditions)})"
+
+            # Search term filter - use LOWER() for case-insensitive search
+            if search_term:
+                query += ''' AND (
+                    LOWER(sap_material_no) LIKE LOWER(%s) OR
+                    LOWER(bfm_equipment_no) LIKE LOWER(%s) OR
+                    LOWER(description) LIKE LOWER(%s) OR
+                    LOWER(location) LIKE LOWER(%s) OR
+                    LOWER(master_lin) LIKE LOWER(%s)
+                )'''
+                search_param = f'%{search_term}%'
+                params.extend([search_param] * 5)
+
+            query += " ORDER BY bfm_equipment_no"
+
+            # Execute optimized query
+            cursor.execute(query, params)
+
+            # Display results
             matches_found = 0
-            for equipment in self.equipment_data:
-                if len(equipment) >= 9:
-                    equipment_location = equipment[5] or ''
+            for idx, equipment in enumerate(cursor.fetchall()):
+                sap, bfm, desc, location, master_lin, monthly_pm, six_month_pm, annual_pm, status = equipment
 
-                    # Check location filter
-                    location_match = (selected_location == "All Locations" or
-                                    equipment_location == selected_location)
+                self.equipment_tree.insert('', 'end', values=(
+                    sap or '',
+                    bfm or '',
+                    desc or '',
+                    location or '',
+                    master_lin or '',
+                    'Yes' if monthly_pm else 'No',
+                    'Yes' if six_month_pm else 'No',
+                    'Yes' if annual_pm else 'No',
+                    status or 'Active'
+                ))
+                matches_found += 1
 
-                    if not location_match:
-                        continue
-
-                    # Check PM cycle filters (if any are active)
-                    if any_pm_filter_active:
-                        has_monthly_pm = equipment[7] if len(equipment) > 7 else False
-                        has_six_month_pm = equipment[8] if len(equipment) > 8 else False
-                        has_annual_pm = equipment[9] if len(equipment) > 9 else False
-
-                        # Equipment must have at least one of the selected PM cycles
-                        pm_match = ((monthly_filter and has_monthly_pm) or
-                                   (six_month_filter and has_six_month_pm) or
-                                   (annual_filter and has_annual_pm))
-
-                        if not pm_match:
-                            continue
-
-                    # Check if search term matches any field
-                    searchable_fields = [
-                        equipment[1] or '',  # SAP
-                        equipment[2] or '',  # BFM
-                        equipment[3] or '',  # Description
-                        equipment_location,  # Location
-                        equipment[6] or ''   # Master LIN
-                    ]
-
-                    if not search_term or any(search_term in field.lower() for field in searchable_fields):
-                        self.equipment_tree.insert('', 'end', values=(
-                            equipment[1] or '',  # SAP
-                            equipment[2] or '',  # BFM
-                            equipment[3] or '',  # Description
-                            equipment_location,  # Location
-                            equipment[6] or '',  # Master LIN
-                            'Yes' if equipment[7] else 'No',  # Monthly PM
-                            'Yes' if equipment[8] else 'No',  # Six Month PM
-                            'Yes' if equipment[9] else 'No',  # Annual PM
-                            equipment[16] or 'Active'  # Status
-                        ))
-                        matches_found += 1
+                # Yield to event loop every 100 items to keep UI responsive
+                if idx % 100 == 0:
+                    self.root.update_idletasks()
 
             print(f"DEBUG: Found {matches_found} matching equipment items")
 
@@ -19984,6 +19972,8 @@ class AITCMMSSystem:
 
         except Exception as e:
             print(f"ERROR in filter_equipment_list: {e}")
+            if hasattr(self, 'update_status'):
+                self.update_status(f"Error filtering equipment: {str(e)}")
             import traceback
             traceback.print_exc()
             if hasattr(self, 'update_status'):
