@@ -11234,6 +11234,24 @@ class AITCMMSSystem:
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
 
+        # Pagination controls for Equipment list
+        equip_pagination_frame = ttk.Frame(self.equipment_frame)
+        equip_pagination_frame.pack(fill='x', padx=10, pady=5)
+
+        self.equip_record_label = ttk.Label(equip_pagination_frame, text="Loading...",
+                                            font=('Arial', 9))
+        self.equip_record_label.pack(side='left', padx=5)
+
+        self.equip_load_more_btn = ttk.Button(equip_pagination_frame, text="📄 Load More Records",
+                                              command=self.load_more_equipment_records)
+        self.equip_load_more_btn.pack(side='left', padx=5)
+
+        # Initialize pagination state
+        self.equip_offset = 0
+        self.equip_page_size = 200
+        self.equip_total_count = 0
+        self.equip_loaded_count = 0
+
         # Bind double-click event to equipment list
         self.equipment_tree.bind('<Double-1>', self.on_equipment_double_click)
 
@@ -12968,7 +12986,25 @@ class AITCMMSSystem:
         cm_list_frame.grid_rowconfigure(0, weight=1)
         cm_list_frame.grid_columnconfigure(0, weight=1)
 
-        # Load CM data with SQL-based filtering
+        # Pagination controls for CM list
+        self.cm_pagination_frame = ttk.Frame(cm_list_frame_outer)
+        self.cm_pagination_frame.pack(fill='x', padx=10, pady=5)
+
+        self.cm_record_label = ttk.Label(self.cm_pagination_frame, text="Loading...",
+                                         font=('Arial', 9))
+        self.cm_record_label.pack(side='left', padx=5)
+
+        self.cm_load_more_btn = ttk.Button(self.cm_pagination_frame, text="📄 Load More Records",
+                                           command=self.load_more_cm_records)
+        self.cm_load_more_btn.pack(side='left', padx=5)
+
+        # Initialize pagination state
+        self.cm_offset = 0
+        self.cm_page_size = 200
+        self.cm_total_count = 0
+        self.cm_loaded_count = 0
+
+        # Load CM data with SQL-based filtering and pagination
         self.load_corrective_maintenance_with_filter()
 
         # Add a separator for visual clarity
@@ -13037,17 +13073,21 @@ class AITCMMSSystem:
         # Simply call filter_cm_list which now does SQL-based filtering
         self.filter_cm_list()
     
-    def filter_cm_list(self, event=None):
-        """OPTIMIZED: Filter CM list using SQL WHERE clauses instead of client-side filtering"""
+    def filter_cm_list(self, event=None, reset=True):
+        """OPTIMIZED: Filter CM list with pagination - SQL WHERE clauses + LIMIT/OFFSET"""
         try:
             # Get filter values
             selected_status = self.cm_filter_var.get() if hasattr(self, 'cm_filter_var') else "All"
             selected_month = self.cm_month_var.get() if hasattr(self, 'cm_month_var') else "All"
             selected_year = self.cm_year_var.get() if hasattr(self, 'cm_year_var') else "All"
 
-            # Clear current tree
-            for item in self.cm_tree.get_children():
-                self.cm_tree.delete(item)
+            # Reset pagination when filters change
+            if reset:
+                self.cm_offset = 0
+                self.cm_loaded_count = 0
+                # Clear current tree
+                for item in self.cm_tree.get_children():
+                    self.cm_tree.delete(item)
 
             cursor = self.conn.cursor()
 
@@ -13142,13 +13182,20 @@ class AITCMMSSystem:
                 if date_conditions:
                     query += " AND (" + " OR ".join(date_conditions) + ")"
 
-            query += " ORDER BY created_date DESC"
+            # Get total count for pagination (only on reset/filter change)
+            if reset or self.cm_total_count == 0:
+                count_query = f"SELECT COUNT(*) FROM corrective_maintenance WHERE 1=1 {query.split('WHERE 1=1')[1].split('ORDER BY')[0]}"
+                cursor.execute(count_query, params)
+                self.cm_total_count = cursor.fetchone()[0]
+
+            # Add pagination
+            query += f" ORDER BY created_date DESC LIMIT {self.cm_page_size} OFFSET {self.cm_offset}"
 
             # Execute optimized query
             cursor.execute(query, params)
 
-            # Display results
-            filtered_count = 0
+            # Display results (append to existing if loading more)
+            records_added = 0
             for idx, cm in enumerate(cursor.fetchall()):
                 cm_number, bfm_no, description, priority, assigned, status, created, notes = cm
                 # Truncate description for display
@@ -13157,16 +13204,42 @@ class AITCMMSSystem:
                 self.cm_tree.insert('', 'end', values=(
                     cm_number, bfm_no, display_desc, priority, assigned, status, created, notes
                 ))
-                filtered_count += 1
+                records_added += 1
 
                 # Yield to event loop every 50 items to keep UI responsive
                 if idx % 50 == 0:
                     self.root.update_idletasks()
 
+            # Update pagination state
+            self.cm_loaded_count += records_added
+            self.cm_offset += records_added
+
+            # Update pagination UI
+            if hasattr(self, 'cm_record_label'):
+                self.cm_record_label.config(
+                    text=f"Showing {self.cm_loaded_count} of {self.cm_total_count} records"
+                )
+
+            if hasattr(self, 'cm_load_more_btn'):
+                if self.cm_loaded_count >= self.cm_total_count:
+                    self.cm_load_more_btn.config(state='disabled', text="All Records Loaded")
+                else:
+                    remaining = self.cm_total_count - self.cm_loaded_count
+                    self.cm_load_more_btn.config(
+                        state='normal',
+                        text=f"📄 Load More ({remaining} remaining)"
+                    )
+
         except Exception as e:
             print(f"Error filtering corrective maintenance: {e}")
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Error", f"Failed to filter CM data: {str(e)}")
         
+    def load_more_cm_records(self):
+        """Load next batch of CM records"""
+        self.filter_cm_list(reset=False)
+
     def clear_cm_filter(self):
         """Clear all filters and show all items"""
         self.cm_filter_var.set("All")
@@ -19991,8 +20064,8 @@ class AITCMMSSystem:
             print(f"Error refreshing equipment list: {e}")
             messagebox.showerror("Error", f"Failed to refresh equipment list: {str(e)}")
     
-    def filter_equipment_list(self, *args):
-        """OPTIMIZED: Filter equipment list using SQL WHERE clauses instead of client-side filtering"""
+    def filter_equipment_list(self, *args, reset=True):
+        """OPTIMIZED: Filter equipment list with pagination - SQL WHERE clauses + LIMIT/OFFSET"""
         try:
             print("DEBUG: filter_equipment_list called")
 
@@ -20021,9 +20094,13 @@ class AITCMMSSystem:
 
             print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}', PM Filters: Monthly={monthly_filter}, 6-Month={six_month_filter}, Annual={annual_filter}")
 
-            # Clear existing items
-            for item in self.equipment_tree.get_children():
-                self.equipment_tree.delete(item)
+            # Reset pagination when filters change
+            if reset:
+                self.equip_offset = 0
+                self.equip_loaded_count = 0
+                # Clear existing items
+                for item in self.equipment_tree.get_children():
+                    self.equipment_tree.delete(item)
 
             cursor = self.conn.cursor()
 
@@ -20064,13 +20141,20 @@ class AITCMMSSystem:
                 search_param = f'%{search_term}%'
                 params.extend([search_param] * 5)
 
-            query += " ORDER BY bfm_equipment_no"
+            # Get total count for pagination (only on reset/filter change)
+            if reset or self.equip_total_count == 0:
+                count_query = f"SELECT COUNT(*) FROM equipment WHERE 1=1 {query.split('WHERE 1=1')[1].split('ORDER BY')[0]}"
+                cursor.execute(count_query, params)
+                self.equip_total_count = cursor.fetchone()[0]
+
+            # Add pagination
+            query += f" ORDER BY bfm_equipment_no LIMIT {self.equip_page_size} OFFSET {self.equip_offset}"
 
             # Execute optimized query
             cursor.execute(query, params)
 
-            # Display results
-            matches_found = 0
+            # Display results (append to existing if loading more)
+            records_added = 0
             for idx, equipment in enumerate(cursor.fetchall()):
                 sap, bfm, desc, location, master_lin, monthly_pm, six_month_pm, annual_pm, status = equipment
 
@@ -20085,20 +20169,40 @@ class AITCMMSSystem:
                     'Yes' if annual_pm else 'No',
                     status or 'Active'
                 ))
-                matches_found += 1
+                records_added += 1
 
                 # Yield to event loop every 100 items to keep UI responsive
                 if idx % 100 == 0:
                     self.root.update_idletasks()
 
-            print(f"DEBUG: Found {matches_found} matching equipment items")
+            # Update pagination state
+            self.equip_loaded_count += records_added
+            self.equip_offset += records_added
+
+            print(f"DEBUG: Loaded {records_added} records, total: {self.equip_loaded_count}/{self.equip_total_count}")
+
+            # Update pagination UI
+            if hasattr(self, 'equip_record_label'):
+                self.equip_record_label.config(
+                    text=f"Showing {self.equip_loaded_count} of {self.equip_total_count} records"
+                )
+
+            if hasattr(self, 'equip_load_more_btn'):
+                if self.equip_loaded_count >= self.equip_total_count:
+                    self.equip_load_more_btn.config(state='disabled', text="All Records Loaded")
+                else:
+                    remaining = self.equip_total_count - self.equip_loaded_count
+                    self.equip_load_more_btn.config(
+                        state='normal',
+                        text=f"📄 Load More ({remaining} remaining)"
+                    )
 
             # Update status bar with results
             if hasattr(self, 'update_status'):
                 if search_term:
-                    self.update_status(f"Found {matches_found} equipment matching '{search_term}'")
+                    self.update_status(f"Showing {self.equip_loaded_count} of {self.equip_total_count} equipment matching '{search_term}'")
                 else:
-                    self.update_status(f"Showing {matches_found} equipment items")
+                    self.update_status(f"Showing {self.equip_loaded_count} of {self.equip_total_count} equipment items")
 
         except Exception as e:
             print(f"ERROR in filter_equipment_list: {e}")
@@ -20106,8 +20210,10 @@ class AITCMMSSystem:
                 self.update_status(f"Error filtering equipment: {str(e)}")
             import traceback
             traceback.print_exc()
-            if hasattr(self, 'update_status'):
-                self.update_status(f"Error filtering equipment: {e}")
+
+    def load_more_equipment_records(self):
+        """Load next batch of equipment records"""
+        self.filter_equipment_list(reset=False)
 
     def populate_location_filter(self):
         """Populate location filter dropdown with distinct locations from database"""
