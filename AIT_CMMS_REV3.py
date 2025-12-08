@@ -19708,13 +19708,21 @@ class AITCMMSSystem:
         assets_scrollbar = ttk.Scrollbar(assets_frame, orient='vertical', command=assets_text.yview)
         assets_text.configure(yscrollcommand=assets_scrollbar.set)
         
-        # Get asset details
+        # Get asset details - OPTIMIZED: Bulk query instead of N+1
         cursor = self.conn.cursor()
-        for bfm in selected_bfms[:20]:  # Show first 20
-            cursor.execute('SELECT bfm_equipment_no, description FROM equipment WHERE bfm_equipment_no = %s', (bfm,))
-            result = cursor.fetchone()
-            if result:
-                assets_text.insert('end', f"- {result[0]} - {result[1][:40]}\n")
+        display_bfms = selected_bfms[:20]  # Show first 20
+
+        if display_bfms:
+            # Single query for all equipment instead of one query per equipment
+            placeholders = ','.join(['%s'] * len(display_bfms))
+            cursor.execute(f'SELECT bfm_equipment_no, description FROM equipment WHERE bfm_equipment_no IN ({placeholders})', tuple(display_bfms))
+            equipment_details = cursor.fetchall()
+
+            # Display equipment in original selection order
+            equipment_dict = {row[0]: row[1] for row in equipment_details}
+            for bfm in display_bfms:
+                if bfm in equipment_dict:
+                    assets_text.insert('end', f"- {bfm} - {equipment_dict[bfm][:40]}\n")
     
         if len(selected_bfms) > 20:
             assets_text.insert('end', f"\n... and {len(selected_bfms) - 20} more assets")
