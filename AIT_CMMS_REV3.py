@@ -12966,10 +12966,11 @@ class AITCMMSSystem:
             has_completion_date = cursor.fetchone() is not None
 
             # Build query with filters applied at database level
+            # Cast all dates to timestamp to avoid type mismatch
             if has_completion_date:
-                date_field = "COALESCE(completion_date, closed_date)"
+                date_field = "COALESCE(completion_date::timestamp, closed_date::timestamp)"
             else:
-                date_field = "closed_date"
+                date_field = "closed_date::timestamp"
 
             query = f'''
                 SELECT cm_number, bfm_equipment_no, description, priority,
@@ -12998,7 +12999,8 @@ class AITCMMSSystem:
             # Date filtering - use SQL EXTRACT instead of Python date parsing
             if selected_month != "All" or selected_year != "All":
                 # For closed/completed CMs, use completion date; otherwise use created date
-                date_column = f"CASE WHEN status IN ('Closed', 'Completed') THEN {date_field} ELSE created_date END"
+                # Cast to timestamp to ensure type consistency
+                date_column = f"CASE WHEN status IN ('Closed', 'Completed') THEN {date_field} ELSE created_date::timestamp END"
 
                 if selected_month != "All":
                     month_num = month_names.get(selected_month)
