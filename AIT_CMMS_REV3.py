@@ -13076,6 +13076,13 @@ class AITCMMSSystem:
     def filter_cm_list(self, event=None, reset=True):
         """OPTIMIZED: Filter CM list with pagination - SQL WHERE clauses + LIMIT/OFFSET"""
         try:
+            # Initialize pagination state if not already done
+            if not hasattr(self, 'cm_offset'):
+                self.cm_offset = 0
+                self.cm_page_size = 200
+                self.cm_total_count = 0
+                self.cm_loaded_count = 0
+
             # Get filter values
             selected_status = self.cm_filter_var.get() if hasattr(self, 'cm_filter_var') else "All"
             selected_month = self.cm_month_var.get() if hasattr(self, 'cm_month_var') else "All"
@@ -20073,6 +20080,13 @@ class AITCMMSSystem:
             if not hasattr(self, 'equipment_tree'):
                 print("DEBUG: equipment_tree not created yet, skipping filter")
                 return
+
+            # Initialize pagination state if not already done
+            if not hasattr(self, 'equip_offset'):
+                self.equip_offset = 0
+                self.equip_page_size = 200
+                self.equip_total_count = 0
+                self.equip_loaded_count = 0
 
             # Update status bar to show function is being called
             if hasattr(self, 'update_status'):
