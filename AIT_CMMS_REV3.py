@@ -12987,7 +12987,7 @@ class AITCMMSSystem:
         cm_list_frame.grid_columnconfigure(0, weight=1)
 
         # Pagination controls for CM list
-        self.cm_pagination_frame = ttk.Frame(cm_list_frame_outer)
+        self.cm_pagination_frame = ttk.Frame(self.cm_frame)
         self.cm_pagination_frame.pack(fill='x', padx=10, pady=5)
 
         self.cm_record_label = ttk.Label(self.cm_pagination_frame, text="Loading...",
