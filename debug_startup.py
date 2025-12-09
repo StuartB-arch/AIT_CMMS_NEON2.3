@@ -7,14 +7,28 @@ Run this instead of the main application to see detailed error output
 import sys
 import traceback
 from datetime import datetime
+import io
+
+# Configure console to handle Unicode on Windows
+if sys.platform == 'win32':
+    # Ensure console can display Unicode characters
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass  # If reconfiguration fails, continue with defaults
 
 # Redirect all output to a log file
 log_file = f"startup_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
+# Save original stdout/stderr for error reporting
+original_stdout = sys.stdout
+original_stderr = sys.stderr
+
 try:
     print(f"Starting application... (logging to {log_file})")
 
-    with open(log_file, 'w') as f:
+    with open(log_file, 'w', encoding='utf-8') as f:
         # Redirect stdout and stderr
         sys.stdout = f
         sys.stderr = f
@@ -35,7 +49,8 @@ try:
         print("If you see this, imports succeeded but tkinter mainloop may have issues")
 
 except Exception as e:
-    with open(log_file, 'a') as f:
+    # Write error to log file
+    with open(log_file, 'a', encoding='utf-8') as f:
         f.write("\n" + "=" * 80 + "\n")
         f.write("FATAL ERROR DURING STARTUP\n")
         f.write("=" * 80 + "\n\n")
@@ -44,6 +59,10 @@ except Exception as e:
         f.write("Full Traceback:\n")
         f.write(traceback.format_exc())
         f.write("\n" + "=" * 80 + "\n")
+
+    # Restore original stdout/stderr to print to console
+    sys.stdout = original_stdout
+    sys.stderr = original_stderr
 
     print(f"\n\nERROR: Application crashed during startup!")
     print(f"Error details have been saved to: {log_file}")
