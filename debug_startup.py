@@ -41,12 +41,28 @@ try:
         # Import and run the main application
         print("Importing main application module...")
         import AIT_CMMS_REV3
+        import tkinter as tk
 
         print("Main module imported successfully")
         print("Starting main application...")
 
-        # This would normally start the tkinter mainloop
-        print("If you see this, imports succeeded but tkinter mainloop may have issues")
+        # Create the Tkinter root and application instance
+        print("Creating Tkinter root window...")
+        root = tk.Tk()
+        print("Tk root window created")
+
+        print("Initializing AIT CMMS System...")
+        app = AIT_CMMS_REV3.AITCMMSSystem(root)
+
+        print("=" * 80)
+        print("Application initialized successfully!")
+        print("Starting Tkinter mainloop...")
+        print("=" * 80)
+
+        # Start the application main loop
+        root.mainloop()
+
+        print("Application closed normally")
 
 except Exception as e:
     # Write error to log file
