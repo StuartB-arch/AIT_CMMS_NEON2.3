@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from kpi_manager import KPIManager
+from kpi_quarterly_calculator import KPIQuarterlyCalculator
 from datetime import datetime
 import traceback
 from reportlab.lib import colors
@@ -34,7 +35,9 @@ class KPIDashboard(QWidget):
         self.pool = pool
         self.current_user = current_user
         self.kpi_manager = KPIManager(pool)
+        self.quarterly_calculator = KPIQuarterlyCalculator(pool)
         self.current_period = datetime.now().strftime('%Y-%m')
+        self.is_quarterly_period = False
         self.chart_canvas = None
         self.init_ui()
 
@@ -60,7 +63,7 @@ class KPIDashboard(QWidget):
         title_label.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(title_label)
 
-        subtitle_label = QLabel("Manual Data Entry & Real-Time Visualization")
+        subtitle_label = QLabel("Manual Data Entry, Real-Time Visualization & Quarterly Reporting")
         subtitle_label.setStyleSheet("font-size: 12pt; color: #ecf0f1;")
         subtitle_label.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(subtitle_label)
@@ -99,6 +102,14 @@ class KPIDashboard(QWidget):
         controls_layout.addWidget(self.period_combo)
 
         controls_layout.addStretch()
+
+        # Quarterly Report Generation Button (only visible for quarterly periods)
+        self.generate_quarterly_btn = QPushButton("📊 Generate & Save Quarterly Report")
+        self.generate_quarterly_btn.setStyleSheet(self.get_button_style("#e67e22"))
+        self.generate_quarterly_btn.clicked.connect(self.generate_quarterly_report)
+        self.generate_quarterly_btn.setMinimumHeight(40)
+        self.generate_quarterly_btn.setVisible(False)  # Hidden by default
+        controls_layout.addWidget(self.generate_quarterly_btn)
 
         refresh_btn = QPushButton("🔄 Refresh Dashboard")
         refresh_btn.setStyleSheet(self.get_button_style("#95a5a6"))
@@ -428,10 +439,31 @@ class KPIDashboard(QWidget):
         """
 
     def populate_periods(self):
-        """Populate period dropdown with last 12 months"""
+        """Populate period dropdown with quarterly and monthly periods"""
         self.period_combo.clear()
         current = datetime.now()
 
+        # Add separator header for quarterly periods
+        self.period_combo.addItem("═══ QUARTERLY PERIODS ═══", None)
+        self.period_combo.model().item(0).setEnabled(False)
+        self.period_combo.model().item(0).setBackground(QColor("#34495e"))
+        self.period_combo.model().item(0).setForeground(QColor("#ffffff"))
+
+        # Add quarterly periods (current year and last 2 years)
+        for year in [current.year, current.year - 1, current.year - 2]:
+            for quarter in [4, 3, 2, 1]:
+                period = f"{year}-Q{quarter}"
+                display = f"Q{quarter} {year} (Quarterly)"
+                self.period_combo.addItem(display, period)
+
+        # Add separator header for monthly periods
+        self.period_combo.addItem("═══ MONTHLY PERIODS ═══", None)
+        separator_idx = self.period_combo.count() - 1
+        self.period_combo.model().item(separator_idx).setEnabled(False)
+        self.period_combo.model().item(separator_idx).setBackground(QColor("#34495e"))
+        self.period_combo.model().item(separator_idx).setForeground(QColor("#ffffff"))
+
+        # Add monthly periods (last 12 months)
         for i in range(12):
             month = current.month - i
             year = current.year
@@ -447,9 +479,22 @@ class KPIDashboard(QWidget):
     def on_period_changed(self, text):
         """Handle period selection change"""
         self.current_period = self.period_combo.currentData()
+
+        # Skip if separator was selected
+        if self.current_period is None:
+            return
+
+        # Detect if quarterly period
+        self.is_quarterly_period = '-Q' in str(self.current_period)
+
+        # Show/hide quarterly report button based on period type
+        self.generate_quarterly_btn.setVisible(self.is_quarterly_period)
+
+        # Refresh dashboard
         self.refresh_dashboard()
-        # Reload current KPI data if one is selected
-        if self.kpi_selector.currentData():
+
+        # For monthly periods, reload current KPI data if one is selected
+        if not self.is_quarterly_period and self.kpi_selector.currentData():
             self.on_kpi_selected(self.kpi_selector.currentText())
 
     def populate_kpi_selector(self):
@@ -807,7 +852,24 @@ class KPIDashboard(QWidget):
     def refresh_dashboard(self):
         """Refresh the overview dashboard"""
         try:
-            results = self.kpi_manager.get_kpi_results(self.current_period)
+            # Get results based on period type
+            if self.is_quarterly_period:
+                # Parse quarterly period (e.g., "2025-Q1")
+                year, quarter = self.current_period.split('-Q')
+                year = int(year)
+                quarter = int(quarter)
+
+                # Check if quarterly data exists in database
+                results = self.quarterly_calculator.get_quarterly_kpi_results(year, quarter)
+
+                # If no saved quarterly data, calculate it on the fly
+                if not results:
+                    quarterly_kpis = self.quarterly_calculator.calculate_all_quarterly_kpis(year, quarter)
+                    # Convert to result format
+                    results = [kpi for kpi in quarterly_kpis if 'error' not in kpi and kpi.get('value') is not None]
+            else:
+                # Monthly period - use existing logic
+                results = self.kpi_manager.get_kpi_results(self.current_period)
 
             # Update summary cards
             total = len(results)
@@ -815,7 +877,8 @@ class KPIDashboard(QWidget):
             failing = sum(1 for r in results if r.get('meets_criteria') is False)
             pending = 17 - total
 
-            self.total_kpis_label.setText(f"Total KPIs\n{total}/17")
+            period_type = "Quarterly" if self.is_quarterly_period else "Monthly"
+            self.total_kpis_label.setText(f"Total KPIs\n{total}/17\n({period_type})")
             self.passing_kpis_label.setText(f"✓ Passing\n{passing}")
             self.failing_kpis_label.setText(f"✗ Failing\n{failing}")
             self.pending_kpis_label.setText(f"⏳ Pending\n{pending}")
@@ -1079,3 +1142,63 @@ class KPIDashboard(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export Excel: {str(e)}\n\n{traceback.format_exc()}")
+
+    def generate_quarterly_report(self):
+        """Generate and save quarterly KPI report"""
+        if not self.is_quarterly_period:
+            QMessageBox.warning(self, "Not a Quarterly Period", "Please select a quarterly period (Q1-Q4) first.")
+            return
+
+        try:
+            # Parse quarterly period
+            year, quarter = self.current_period.split('-Q')
+            year = int(year)
+            quarter = int(quarter)
+
+            # Show progress dialog
+            progress = QProgressDialog("Generating quarterly report...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(10)
+
+            # Generate quarterly report
+            report = self.quarterly_calculator.generate_quarterly_report(
+                year=year,
+                quarter=quarter,
+                save_to_db=True,
+                calculated_by=self.current_user
+            )
+
+            progress.setValue(80)
+
+            # Refresh dashboard to show new data
+            self.refresh_dashboard()
+
+            progress.setValue(100)
+            progress.close()
+
+            # Show success message with summary
+            stats = report['statistics']
+            quarter_info = report['quarter_info']
+
+            msg = f"✓ Quarterly Report Generated Successfully!\n\n"
+            msg += f"Quarter: {quarter_info['label']}\n"
+            msg += f"Period: {quarter_info['start_date']} to {quarter_info['end_date']}\n\n"
+            msg += f"Summary:\n"
+            msg += f"  Total KPIs: {stats['total_kpis']}\n"
+            msg += f"  With Data: {stats['kpis_with_data']}\n"
+            msg += f"  Passing: {stats['kpis_passing']} (✓)\n"
+            msg += f"  Failing: {stats['kpis_failing']} (✗)\n"
+            msg += f"  Pending: {stats['kpis_pending']}\n\n"
+
+            if stats['kpis_with_data'] > 0:
+                pass_rate = (stats['kpis_passing'] / stats['kpis_with_data']) * 100
+                msg += f"Pass Rate: {pass_rate:.1f}%\n\n"
+
+            msg += f"The quarterly results have been saved to the database.\n"
+            msg += f"You can now export them to PDF or Excel."
+
+            QMessageBox.information(self, "Quarterly Report Generated", msg)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to generate quarterly report: {str(e)}\n\n{traceback.format_exc()}")
