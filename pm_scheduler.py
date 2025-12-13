@@ -18,6 +18,7 @@ import os
 class PMType(Enum):
     WEEKLY = "Weekly"
     MONTHLY = "Monthly"
+    SIX_MONTH = "Six Month"
     ANNUAL = "Annual"
 
 
@@ -34,9 +35,11 @@ class Equipment:
     description: str
     has_weekly: bool
     has_monthly: bool
+    has_six_month: bool
     has_annual: bool
     last_weekly_date: Optional[str]
     last_monthly_date: Optional[str]
+    last_six_month_date: Optional[str]
     last_annual_date: Optional[str]
     status: str
     priority: int = 99  # Default priority for assets not in priority lists
@@ -300,6 +303,7 @@ class PMEligibilityChecker:
     PM_FREQUENCIES = {
         PMType.WEEKLY: 7,
         PMType.MONTHLY: 30,
+        PMType.SIX_MONTH: 180,
         PMType.ANNUAL: 365
     }
 
@@ -317,6 +321,8 @@ class PMEligibilityChecker:
             return PMEligibilityResult(PMStatus.NOT_DUE, "Equipment doesn't require Weekly PM")
         if pm_type == PMType.MONTHLY and not equipment.has_monthly:
             return PMEligibilityResult(PMStatus.NOT_DUE, "Equipment doesn't require Monthly PM")
+        if pm_type == PMType.SIX_MONTH and not equipment.has_six_month:
+            return PMEligibilityResult(PMStatus.NOT_DUE, "Equipment doesn't require Six Month PM")
         if pm_type == PMType.ANNUAL and not equipment.has_annual:
             return PMEligibilityResult(PMStatus.NOT_DUE, "Equipment doesn't require Annual PM")
 
@@ -395,6 +401,8 @@ class PMEligibilityChecker:
             return 7  # Weekly PMs: minimum 7 days between completions
         elif pm_type == PMType.MONTHLY:
             return 30  # Monthly PMs: minimum 30 days between completions
+        elif pm_type == PMType.SIX_MONTH:
+            return 180  # Six Month PMs: minimum 180 days between completions
         else:  # PMType.ANNUAL
             return 365  # Annual PMs: minimum 365 days between completions
 
@@ -488,6 +496,8 @@ class PMEligibilityChecker:
                 last_date_str = equipment.last_weekly_date
             elif pm_type == PMType.MONTHLY:
                 last_date_str = equipment.last_monthly_date
+            elif pm_type == PMType.SIX_MONTH:
+                last_date_str = equipment.last_six_month_date
             else:
                 last_date_str = equipment.last_annual_date
             last_completion_date = self.date_parser.parse_flexible(last_date_str)
@@ -499,6 +509,8 @@ class PMEligibilityChecker:
                 priority = 1100
             elif pm_type == PMType.MONTHLY:
                 priority = 1000
+            elif pm_type == PMType.SIX_MONTH:
+                priority = 950
             else:
                 priority = 900
             return PMEligibilityResult(
@@ -518,6 +530,10 @@ class PMEligibilityChecker:
             min_days = 30
             max_days = 35
             ideal_frequency = 30
+        elif pm_type == PMType.SIX_MONTH:
+            min_days = 180
+            max_days = 190
+            ideal_frequency = 180
         else:  # PMType.ANNUAL
             min_days = 365
             max_days = 370
@@ -679,9 +695,9 @@ class PMAssignmentGenerator:
                             has_custom
                         ))
 
-            # Check Annual PM eligibility
-            if equipment.has_annual:
-                # Don't schedule annual if weekly or monthly is already assigned
+            # Check Six Month PM eligibility
+            if equipment.has_six_month:
+                # Don't schedule six month if weekly or monthly is already assigned
                 has_weekly_assignment = any(
                     a.bfm_no == equipment.bfm_no and a.pm_type == PMType.WEEKLY
                     for a in potential_assignments
@@ -692,6 +708,37 @@ class PMAssignmentGenerator:
                 )
 
                 if not has_weekly_assignment and not has_monthly_assignment:
+                    six_month_result = self.eligibility_checker.check_eligibility(
+                        equipment, PMType.SIX_MONTH, week_start
+                    )
+                    if six_month_result.status == PMStatus.DUE:
+                        has_custom = self._has_custom_template(equipment.bfm_no, PMType.SIX_MONTH)
+                        potential_assignments.append(PMAssignment(
+                            equipment.bfm_no,
+                            PMType.SIX_MONTH,
+                            equipment.description,
+                            six_month_result.priority_score,
+                            six_month_result.reason,
+                            has_custom
+                        ))
+
+            # Check Annual PM eligibility
+            if equipment.has_annual:
+                # Don't schedule annual if weekly, monthly, or six month is already assigned
+                has_weekly_assignment = any(
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.WEEKLY
+                    for a in potential_assignments
+                )
+                has_monthly_assignment = any(
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.MONTHLY
+                    for a in potential_assignments
+                )
+                has_six_month_assignment = any(
+                    a.bfm_no == equipment.bfm_no and a.pm_type == PMType.SIX_MONTH
+                    for a in potential_assignments
+                )
+
+                if not has_weekly_assignment and not has_monthly_assignment and not has_six_month_assignment:
                     annual_result = self.eligibility_checker.check_eligibility(
                         equipment, PMType.ANNUAL, week_start
                     )
@@ -825,8 +872,8 @@ class PMSchedulingService:
         """Load equipment from database with priority information"""
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT bfm_equipment_no, description, weekly_pm, monthly_pm, annual_pm,
-                   last_weekly_pm, last_monthly_pm, last_annual_pm, status
+            SELECT bfm_equipment_no, description, weekly_pm, monthly_pm, six_month_pm, annual_pm,
+                   last_weekly_pm, last_monthly_pm, last_six_month_pm, last_annual_pm, status
             FROM equipment
             WHERE status = 'Active'
             ORDER BY bfm_equipment_no
@@ -842,11 +889,13 @@ class PMSchedulingService:
                 description=row[1],
                 has_weekly=bool(row[2]) if row[2] is not None else False,
                 has_monthly=bool(row[3]) if row[3] is not None else False,
-                has_annual=bool(row[4]) if row[4] is not None else False,
-                last_weekly_date=row[5],
-                last_monthly_date=row[6],
-                last_annual_date=row[7],
-                status=row[8],
+                has_six_month=bool(row[4]) if row[4] is not None else False,
+                has_annual=bool(row[5]) if row[5] is not None else False,
+                last_weekly_date=row[6],
+                last_monthly_date=row[7],
+                last_six_month_date=row[8],
+                last_annual_date=row[9],
+                status=row[10],
                 priority=priority
             ))
 

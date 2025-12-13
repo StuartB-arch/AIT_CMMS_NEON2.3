@@ -8899,30 +8899,60 @@ class AITCMMSSystem:
             templates = cursor.fetchall()
 
             if not templates:
-                # No custom templates - show default templates
-                cursor.execute('SELECT COUNT(*) FROM default_pm_checklist WHERE is_active = TRUE')
-                default_count = cursor.fetchone()[0]
+                # No custom templates - check what PM types are enabled for this equipment
+                cursor.execute('''
+                    SELECT weekly_pm, monthly_pm, six_month_pm, annual_pm
+                    FROM equipment
+                    WHERE bfm_equipment_no = %s
+                ''', (bfm_no,))
+                pm_flags = cursor.fetchone()
 
-                if default_count > 0:
-                    # Create default template entries for each PM type
-                    pm_types = ['Monthly', 'Six Month', 'Annual']
-                    for pm_type in pm_types:
-                        self.templates_tree.insert('', 'end', values=(
-                            bfm_no,
-                            f"Default - {pm_type} PM",
-                            pm_type,
-                            default_count,
-                            "2.0h",
-                            "Default"
-                        ))
+                if pm_flags:
+                    weekly_enabled, monthly_enabled, six_month_enabled, annual_enabled = pm_flags
+                    enabled_pm_types = []
 
-                    messagebox.showinfo("Default Templates",
-                        f"Showing default PM templates for equipment {bfm_no}\n\n"
-                        f"These are standard templates. You can preview and customize them\n"
-                        f"by clicking 'Customize This Template' in the preview window.")
+                    if weekly_enabled:
+                        enabled_pm_types.append('Weekly')
+                    if monthly_enabled:
+                        enabled_pm_types.append('Monthly')
+                    if six_month_enabled:
+                        enabled_pm_types.append('Six Month')
+                    if annual_enabled:
+                        enabled_pm_types.append('Annual')
+
+                    if enabled_pm_types:
+                        # Get default checklist count
+                        cursor.execute('SELECT COUNT(*) FROM default_pm_checklist WHERE is_active = TRUE')
+                        default_count = cursor.fetchone()[0]
+
+                        if default_count > 0:
+                            # Show default templates only for enabled PM types
+                            for pm_type in enabled_pm_types:
+                                self.templates_tree.insert('', 'end', values=(
+                                    bfm_no,
+                                    f"Default - {pm_type} PM",
+                                    pm_type,
+                                    default_count,
+                                    "2.0h",
+                                    "Default"
+                                ))
+
+                            messagebox.showinfo("Default Templates",
+                                f"Showing default PM templates for equipment {bfm_no}\n\n"
+                                f"Enabled PM types: {', '.join(enabled_pm_types)}\n\n"
+                                f"These are standard templates. You can preview and customize them\n"
+                                f"by clicking 'Customize This Template' in the preview window.")
+                        else:
+                            messagebox.showinfo("No Templates",
+                                f"No default PM checklist items available.\n"
+                                f"Please create custom templates for this equipment.")
+                    else:
+                        messagebox.showinfo("No PM Types Enabled",
+                            f"Equipment {bfm_no} has no PM types enabled.\n\n"
+                            f"Please enable PM types in the Equipment Management section.")
                 else:
-                    messagebox.showinfo("No Templates",
-                        f"No PM templates found for equipment {bfm_no}")
+                    messagebox.showinfo("Equipment Not Found",
+                        f"Equipment {bfm_no} not found in database.")
                 return
 
             for template in templates:
