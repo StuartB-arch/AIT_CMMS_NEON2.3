@@ -5944,15 +5944,16 @@ class AITCMMSSystem:
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Fetch full template data
+        # Fetch full template data - MUST filter by pm_type
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items,
                 special_instructions, safety_notes, estimated_hours
             FROM pm_templates
-            WHERE bfm_equipment_no = %s AND template_name = %s
-        ''', (bfm_no, template_name))
+            WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+        ''', (bfm_no, template_name, pm_type))
 
         template_data = cursor.fetchone()
         if not template_data:
@@ -6465,15 +6466,16 @@ class AITCMMSSystem:
         if result:
             try:
                 cursor = self.conn.cursor()
+                # MUST filter by pm_type to delete correct template
                 cursor.execute('''
-                    DELETE FROM pm_templates 
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    DELETE FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
 
                 self.conn.commit()
-                messagebox.showinfo("Success", f"Template '{template_name}' deleted successfully!")
+                messagebox.showinfo("Success", f"Template '{template_name}' ({pm_type}) deleted successfully!")
                 self.load_pm_templates()
-                self.update_status(f"Deleted PM template: {template_name}")
+                self.update_status(f"Deleted PM template: {template_name} ({pm_type})")
 
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete template: {str(e)}")
@@ -6536,17 +6538,17 @@ class AITCMMSSystem:
                 equipment_data[3]   # location
             )
         else:
-            # Get template and equipment data
+            # Get template and equipment data - MUST filter by pm_type
             cursor.execute('''
                 SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
-                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}, PM Type: {pm_type}\n\nPlease check that the template exists in the database.")
                 return
 
         try:
@@ -9024,13 +9026,13 @@ class AITCMMSSystem:
             safety_notes = None
             estimated_hours = 2.0
         else:
-            # Load custom template data
+            # Load custom template data - MUST filter by pm_type to get correct template
             cursor.execute('''
                 SELECT pt.*, e.description, e.sap_material_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
@@ -9271,32 +9273,32 @@ class AITCMMSSystem:
             try:
                 cursor = self.conn.cursor()
 
-                # Check if template already exists
+                # Check if template already exists - MUST filter by pm_type
                 cursor.execute('''
                     SELECT id FROM pm_templates
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
 
                 if cursor.fetchone():
                     if not messagebox.askyesno("Template Exists",
-                        f"A template named '{template_name}' already exists for {bfm_no}.\n\nOverwrite it?"):
+                        f"A template named '{template_name}' already exists for {bfm_no} ({pm_type}).\n\nOverwrite it?"):
                         return
 
-                    # Update existing
+                    # Update existing - MUST filter by pm_type to update correct template
                     cursor.execute('''
                         UPDATE pm_templates
-                        SET pm_type = %s, checklist_items = %s,
+                        SET checklist_items = %s,
                             special_instructions = %s, safety_notes = %s,
                             estimated_hours = %s, updated_date = CURRENT_TIMESTAMP
-                        WHERE bfm_equipment_no = %s AND template_name = %s
+                        WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
                     ''', (
-                        pm_type,
                         json.dumps(checklist_items),
                         special_instructions_text.get('1.0', 'end-1c'),
                         safety_notes_text.get('1.0', 'end-1c'),
                         est_hours,
                         bfm_no,
-                        template_name
+                        template_name,
+                        pm_type
                     ))
                 else:
                     # Insert new
@@ -9344,18 +9346,21 @@ class AITCMMSSystem:
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
         result = messagebox.askyesno("Confirm Delete",
-                                f"Delete PM template '{template_name}' for {bfm_no}?\n\n"
+                                f"Delete PM template '{template_name}' for {bfm_no}?\n"
+                                f"PM Type: {pm_type}\n\n"
                                 f"This action cannot be undone.")
 
         if result:
             try:
                 cursor = self.conn.cursor()
+                # MUST filter by pm_type to delete correct template
                 cursor.execute('''
                     DELETE FROM pm_templates
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
             
                 self.conn.commit()
                 messagebox.showinfo("Success", "Template deleted successfully!")
@@ -9422,17 +9427,17 @@ class AITCMMSSystem:
                 equipment_data[3]   # location
             )
         else:
-            # Get template and equipment data
+            # Get template and equipment data - MUST filter by pm_type
             cursor.execute('''
                 SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
-                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}, PM Type: {pm_type}\n\nPlease check that the template exists in the database.")
                 return
 
         try:
