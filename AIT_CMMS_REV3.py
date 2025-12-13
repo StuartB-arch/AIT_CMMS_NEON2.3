@@ -7324,6 +7324,17 @@ class AITCMMSSystem:
             # Check if database needs restore
             self.check_empty_database_and_offer_restore()
 
+            # AUTO-MIGRATION: Fix Cannot Find schedules retroactively
+            # This will update any past PM schedules that should be marked as "Cannot Find"
+            if hasattr(self, 'update_status'):
+                self.update_status("Checking for Cannot Find schedule updates...")
+            try:
+                updated_count = self.fix_cannot_find_schedules_retroactive(silent=True)
+                if updated_count > 0:
+                    print(f"AUTO-MIGRATION: Updated {updated_count} PM schedules to 'Cannot Find' status")
+            except Exception as e:
+                print(f"Error in Cannot Find schedule migration: {e}")
+
             # PERFORMANCE FIX: Initialize KPI system for managers asynchronously
             if self.current_user_role == 'Manager':
                 if hasattr(self, 'update_status'):
@@ -14694,8 +14705,89 @@ class AITCMMSSystem:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to fix weekly schedule: {str(e)}")
             print(f"Error: {e}")
-    
-    
+
+    def fix_cannot_find_schedules_retroactive(self, silent=False):
+        """Retroactively update all PM schedules for Cannot Find assets
+
+        Args:
+            silent: If True, runs without user confirmation (for auto-migration)
+        """
+        try:
+            cursor = self.conn.cursor()
+
+            # Find all equipment in cannot_find_assets table
+            cursor.execute('''
+                SELECT bfm_equipment_no, reported_date, technician_name, notes
+                FROM cannot_find_assets
+                WHERE status = 'Missing'
+            ''')
+
+            cannot_find_assets = cursor.fetchall()
+            print(f"Found {len(cannot_find_assets)} Cannot Find assets")
+
+            if not cannot_find_assets:
+                if not silent:
+                    messagebox.showinfo("No Updates Needed", "No Cannot Find assets found to update.")
+                return 0
+
+            # Confirm with user before making changes (unless silent mode)
+            if not silent:
+                response = messagebox.askyesno(
+                    "Retroactive Schedule Update",
+                    f"Found {len(cannot_find_assets)} Cannot Find assets.\n\n"
+                    f"This will update ALL scheduled PMs for these assets to 'Cannot Find' status.\n\n"
+                    f"Do you want to proceed?"
+                )
+
+                if not response:
+                    return 0
+
+            updated_count = 0
+
+            for asset in cannot_find_assets:
+                bfm_no, reported_date, technician, notes = asset
+
+                # Update all scheduled PMs for this equipment to "Cannot Find"
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules
+                    SET status = 'Cannot Find',
+                        completion_date = %s,
+                        notes = COALESCE(%s, notes)
+                    WHERE bfm_equipment_no = %s
+                      AND status = 'Scheduled'
+                ''', (reported_date, notes, bfm_no))
+
+                rows_updated = cursor.rowcount
+                if rows_updated > 0:
+                    print(f"Updated {rows_updated} schedules for {bfm_no}")
+                    updated_count += rows_updated
+
+            self.conn.commit()
+
+            if not silent:
+                messagebox.showinfo(
+                    "Success",
+                    f"Retroactive update complete!\n\n"
+                    f"Updated {updated_count} scheduled PMs to 'Cannot Find' status\n"
+                    f"for {len(cannot_find_assets)} assets."
+                )
+
+            print(f"Total: Updated {updated_count} schedules for {len(cannot_find_assets)} Cannot Find assets")
+
+            # Refresh displays
+            if hasattr(self, 'refresh_technician_schedules'):
+                self.refresh_technician_schedules()
+
+            return updated_count
+
+        except Exception as e:
+            self.conn.rollback()
+            if not silent:
+                messagebox.showerror("Error", f"Failed to fix Cannot Find schedules: {str(e)}")
+            print(f"Error fixing Cannot Find schedules: {e}")
+            return 0
+
+
     
     
     def process_cannot_find_pm(self, cursor, bfm_no, technician, completion_date, notes):
@@ -19846,6 +19938,13 @@ class AITCMMSSystem:
 
                         # Remove from Run to Failure if it was there
                         cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        # Update any scheduled PMs for this asset to "Cannot Find" status
+                        cursor.execute('''
+                            UPDATE weekly_pm_schedules
+                            SET status = 'Cannot Find'
+                            WHERE bfm_equipment_no = %s AND status = 'Scheduled'
+                        ''', (bfm_no,))
 
                     elif not cannot_find_var.get() and current_status == 'Cannot Find':
                         # Remove from Cannot Find table
