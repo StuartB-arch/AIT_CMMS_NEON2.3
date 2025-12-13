@@ -5944,15 +5944,16 @@ class AITCMMSSystem:
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
-        # Fetch full template data
+        # Fetch full template data - MUST filter by pm_type
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT id, bfm_equipment_no, template_name, pm_type, checklist_items,
                 special_instructions, safety_notes, estimated_hours
             FROM pm_templates
-            WHERE bfm_equipment_no = %s AND template_name = %s
-        ''', (bfm_no, template_name))
+            WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+        ''', (bfm_no, template_name, pm_type))
 
         template_data = cursor.fetchone()
         if not template_data:
@@ -6465,15 +6466,16 @@ class AITCMMSSystem:
         if result:
             try:
                 cursor = self.conn.cursor()
+                # MUST filter by pm_type to delete correct template
                 cursor.execute('''
-                    DELETE FROM pm_templates 
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    DELETE FROM pm_templates
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
 
                 self.conn.commit()
-                messagebox.showinfo("Success", f"Template '{template_name}' deleted successfully!")
+                messagebox.showinfo("Success", f"Template '{template_name}' ({pm_type}) deleted successfully!")
                 self.load_pm_templates()
-                self.update_status(f"Deleted PM template: {template_name}")
+                self.update_status(f"Deleted PM template: {template_name} ({pm_type})")
 
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete template: {str(e)}")
@@ -6536,17 +6538,17 @@ class AITCMMSSystem:
                 equipment_data[3]   # location
             )
         else:
-            # Get template and equipment data
+            # Get template and equipment data - MUST filter by pm_type
             cursor.execute('''
                 SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
-                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}, PM Type: {pm_type}\n\nPlease check that the template exists in the database.")
                 return
 
         try:
@@ -7321,6 +7323,17 @@ class AITCMMSSystem:
 
             # Check if database needs restore
             self.check_empty_database_and_offer_restore()
+
+            # AUTO-MIGRATION: Fix Cannot Find schedules retroactively
+            # This will update any past PM schedules that should be marked as "Cannot Find"
+            if hasattr(self, 'update_status'):
+                self.update_status("Checking for Cannot Find schedule updates...")
+            try:
+                updated_count = self.fix_cannot_find_schedules_retroactive(silent=True)
+                if updated_count > 0:
+                    print(f"AUTO-MIGRATION: Updated {updated_count} PM schedules to 'Cannot Find' status")
+            except Exception as e:
+                print(f"Error in Cannot Find schedule migration: {e}")
 
             # PERFORMANCE FIX: Initialize KPI system for managers asynchronously
             if self.current_user_role == 'Manager':
@@ -9024,13 +9037,13 @@ class AITCMMSSystem:
             safety_notes = None
             estimated_hours = 2.0
         else:
-            # Load custom template data
+            # Load custom template data - MUST filter by pm_type to get correct template
             cursor.execute('''
                 SELECT pt.*, e.description, e.sap_material_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
@@ -9271,32 +9284,32 @@ class AITCMMSSystem:
             try:
                 cursor = self.conn.cursor()
 
-                # Check if template already exists
+                # Check if template already exists - MUST filter by pm_type
                 cursor.execute('''
                     SELECT id FROM pm_templates
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
 
                 if cursor.fetchone():
                     if not messagebox.askyesno("Template Exists",
-                        f"A template named '{template_name}' already exists for {bfm_no}.\n\nOverwrite it?"):
+                        f"A template named '{template_name}' already exists for {bfm_no} ({pm_type}).\n\nOverwrite it?"):
                         return
 
-                    # Update existing
+                    # Update existing - MUST filter by pm_type to update correct template
                     cursor.execute('''
                         UPDATE pm_templates
-                        SET pm_type = %s, checklist_items = %s,
+                        SET checklist_items = %s,
                             special_instructions = %s, safety_notes = %s,
                             estimated_hours = %s, updated_date = CURRENT_TIMESTAMP
-                        WHERE bfm_equipment_no = %s AND template_name = %s
+                        WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
                     ''', (
-                        pm_type,
                         json.dumps(checklist_items),
                         special_instructions_text.get('1.0', 'end-1c'),
                         safety_notes_text.get('1.0', 'end-1c'),
                         est_hours,
                         bfm_no,
-                        template_name
+                        template_name,
+                        pm_type
                     ))
                 else:
                     # Insert new
@@ -9344,18 +9357,21 @@ class AITCMMSSystem:
         item = self.templates_tree.item(selected[0])
         bfm_no = str(item['values'][0])
         template_name = item['values'][1]
+        pm_type = item['values'][2]
 
         result = messagebox.askyesno("Confirm Delete",
-                                f"Delete PM template '{template_name}' for {bfm_no}?\n\n"
+                                f"Delete PM template '{template_name}' for {bfm_no}?\n"
+                                f"PM Type: {pm_type}\n\n"
                                 f"This action cannot be undone.")
 
         if result:
             try:
                 cursor = self.conn.cursor()
+                # MUST filter by pm_type to delete correct template
                 cursor.execute('''
                     DELETE FROM pm_templates
-                    WHERE bfm_equipment_no = %s AND template_name = %s
-                ''', (bfm_no, template_name))
+                    WHERE bfm_equipment_no = %s AND template_name = %s AND pm_type = %s
+                ''', (bfm_no, template_name, pm_type))
             
                 self.conn.commit()
                 messagebox.showinfo("Success", "Template deleted successfully!")
@@ -9422,17 +9438,17 @@ class AITCMMSSystem:
                 equipment_data[3]   # location
             )
         else:
-            # Get template and equipment data
+            # Get template and equipment data - MUST filter by pm_type
             cursor.execute('''
                 SELECT pt.*, e.sap_material_no, e.description, e.tool_id_drawing_no, e.location
                 FROM pm_templates pt
                 LEFT JOIN equipment e ON pt.bfm_equipment_no = e.bfm_equipment_no
-                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s
-            ''', (bfm_no, template_name))
+                WHERE pt.bfm_equipment_no = %s AND pt.template_name = %s AND pt.pm_type = %s
+            ''', (bfm_no, template_name, pm_type))
 
             template_data = cursor.fetchone()
             if not template_data:
-                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}\n\nPlease check that the template exists in the database.")
+                messagebox.showerror("Error", f"Template not found for BFM: {bfm_no}, Name: {template_name}, PM Type: {pm_type}\n\nPlease check that the template exists in the database.")
                 return
 
         try:
@@ -14689,8 +14705,89 @@ class AITCMMSSystem:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to fix weekly schedule: {str(e)}")
             print(f"Error: {e}")
-    
-    
+
+    def fix_cannot_find_schedules_retroactive(self, silent=False):
+        """Retroactively update all PM schedules for Cannot Find assets
+
+        Args:
+            silent: If True, runs without user confirmation (for auto-migration)
+        """
+        try:
+            cursor = self.conn.cursor()
+
+            # Find all equipment in cannot_find_assets table
+            cursor.execute('''
+                SELECT bfm_equipment_no, reported_date, technician_name, notes
+                FROM cannot_find_assets
+                WHERE status = 'Missing'
+            ''')
+
+            cannot_find_assets = cursor.fetchall()
+            print(f"Found {len(cannot_find_assets)} Cannot Find assets")
+
+            if not cannot_find_assets:
+                if not silent:
+                    messagebox.showinfo("No Updates Needed", "No Cannot Find assets found to update.")
+                return 0
+
+            # Confirm with user before making changes (unless silent mode)
+            if not silent:
+                response = messagebox.askyesno(
+                    "Retroactive Schedule Update",
+                    f"Found {len(cannot_find_assets)} Cannot Find assets.\n\n"
+                    f"This will update ALL scheduled PMs for these assets to 'Cannot Find' status.\n\n"
+                    f"Do you want to proceed?"
+                )
+
+                if not response:
+                    return 0
+
+            updated_count = 0
+
+            for asset in cannot_find_assets:
+                bfm_no, reported_date, technician, notes = asset
+
+                # Update all scheduled PMs for this equipment to "Cannot Find"
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules
+                    SET status = 'Cannot Find',
+                        completion_date = %s,
+                        notes = COALESCE(%s, notes)
+                    WHERE bfm_equipment_no = %s
+                      AND status = 'Scheduled'
+                ''', (reported_date, notes, bfm_no))
+
+                rows_updated = cursor.rowcount
+                if rows_updated > 0:
+                    print(f"Updated {rows_updated} schedules for {bfm_no}")
+                    updated_count += rows_updated
+
+            self.conn.commit()
+
+            if not silent:
+                messagebox.showinfo(
+                    "Success",
+                    f"Retroactive update complete!\n\n"
+                    f"Updated {updated_count} scheduled PMs to 'Cannot Find' status\n"
+                    f"for {len(cannot_find_assets)} assets."
+                )
+
+            print(f"Total: Updated {updated_count} schedules for {len(cannot_find_assets)} Cannot Find assets")
+
+            # Refresh displays
+            if hasattr(self, 'refresh_technician_schedules'):
+                self.refresh_technician_schedules()
+
+            return updated_count
+
+        except Exception as e:
+            self.conn.rollback()
+            if not silent:
+                messagebox.showerror("Error", f"Failed to fix Cannot Find schedules: {str(e)}")
+            print(f"Error fixing Cannot Find schedules: {e}")
+            return 0
+
+
     
     
     def process_cannot_find_pm(self, cursor, bfm_no, technician, completion_date, notes):
@@ -19841,6 +19938,13 @@ class AITCMMSSystem:
 
                         # Remove from Run to Failure if it was there
                         cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        # Update any scheduled PMs for this asset to "Cannot Find" status
+                        cursor.execute('''
+                            UPDATE weekly_pm_schedules
+                            SET status = 'Cannot Find'
+                            WHERE bfm_equipment_no = %s AND status = 'Scheduled'
+                        ''', (bfm_no,))
 
                     elif not cannot_find_var.get() and current_status == 'Cannot Find':
                         # Remove from Cannot Find table
