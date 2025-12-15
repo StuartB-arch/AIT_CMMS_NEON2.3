@@ -15078,65 +15078,19 @@ class AITCMMSSystem:
 
     # 8. LOAD RUN TO FAILURE ASSETS
     def load_run_to_failure_assets(self):
-        """Enhanced method to load run to failure assets with better data handling"""
+        """Stubbed out - Run to Failure functionality replaced with Deactivated tab"""
+        # This function is kept for backwards compatibility but does nothing
+        # The Run to Failure tab has been replaced with the Deactivated tab
+        if not hasattr(self, 'run_to_failure_tree'):
+            return  # Tab doesn't exist, nothing to do
+
+        # If the tree somehow exists (shouldn't happen), just clear it
         try:
-            cursor = self.conn.cursor()
-        
-            # Get data from both run_to_failure_assets table AND equipment table
-            cursor.execute('''
-                SELECT DISTINCT
-                    COALESCE(rtf.bfm_equipment_no, e.bfm_equipment_no) as bfm_no,
-                    COALESCE(rtf.description, e.description) as description,
-                    COALESCE(rtf.location, e.location) as location,
-                    COALESCE(rtf.technician_name, 'System Change') as technician,
-                    COALESCE(rtf.completion_date, e.updated_date, CURRENT_DATE) as completion_date,
-                    COALESCE(rtf.labor_hours, 0) as labor_hours,
-                    COALESCE(rtf.notes, 'Set via equipment edit') as notes
-                FROM equipment e
-                LEFT JOIN run_to_failure_assets rtf ON e.bfm_equipment_no = rtf.bfm_equipment_no
-                WHERE e.status = 'Run to Failure'
-            
-                UNION
-            
-                SELECT 
-                    rtf.bfm_equipment_no,
-                    rtf.description,
-                    rtf.location,
-                    rtf.technician_name,
-                    rtf.completion_date,
-                    rtf.labor_hours,
-                    rtf.notes
-                FROM run_to_failure_assets rtf
-                LEFT JOIN equipment e ON rtf.bfm_equipment_no = e.bfm_equipment_no
-                WHERE e.bfm_equipment_no IS NULL OR e.status = 'Run to Failure'
-            
-                ORDER BY completion_date DESC
-            ''')
-        
-            # Clear existing items
             for item in self.run_to_failure_tree.get_children():
                 self.run_to_failure_tree.delete(item)
-        
-            # Add run to failure records
-            for asset in cursor.fetchall():
-                bfm_no, description, location, technician, completion_date, hours, notes = asset
-                hours_display = f"{hours:.1f}h" if hours else "0.0h"
-            
-                self.run_to_failure_tree.insert('', 'end', values=(
-                    bfm_no,
-                    description or 'No description',
-                    location or 'Unknown location',
-                    technician or 'Unknown',
-                    completion_date or '',
-                    hours_display
-                ))
-            
-            # Update the count in equipment statistics
-            self.update_equipment_statistics()
-            
         except Exception as e:
-            print(f"Error loading run to failure assets: {e}")
-            messagebox.showerror("Error", f"Failed to load Run to Failure assets: {str(e)}")
+            # Silently ignore errors since this functionality is deprecated
+            pass
             
             
     # 9. EXPORT CANNOT FIND TO PDF
@@ -15348,70 +15302,10 @@ class AITCMMSSystem:
 
     # 10. EXPORT RUN TO FAILURE TO PDF
     def export_run_to_failure_pdf(self):
-        """Export Run to Failure assets to PDF"""
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"Run_to_Failure_Assets_{timestamp}.pdf"
-        
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes
-                FROM run_to_failure_assets 
-                ORDER BY completion_date DESC
-            ''')
-        
-            assets = cursor.fetchall()
-        
-            doc = SimpleDocTemplate(filename, pagesize=letter)
-            story = []
-            styles = getSampleStyleSheet()
-        
-            # Title
-            title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], 
-                                    fontSize=18, textColor=colors.darkblue, alignment=1)
-            story.append(Paragraph("AIRBUS AIT - RUN TO FAILURE ASSETS REPORT", title_style))
-            story.append(Spacer(1, 20))
-        
-            # Report info
-            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
-            story.append(Paragraph(f"Total Run to Failure Assets: {len(assets)}", styles['Normal']))
-            story.append(Spacer(1, 20))
-        
-            if assets:
-                # Create table
-                data = [['BFM Equipment No.', 'Description', 'Location', 'Completed By', 'Date', 'Hours']]
-                for asset in assets:
-                    bfm_no, description, location, technician, completion_date, hours, notes = asset
-                    data.append([
-                        bfm_no,
-                        (description[:25] + '...') if description and len(description) > 25 else (description or ''),
-                        location or '',
-                        technician,
-                        completion_date,
-                        f"{hours:.1f}h" if hours else ''
-                    ])
-            
-                table = Table(data, colWidths=[1.4*inch, 2.2*inch, 1*inch, 1*inch, 0.8*inch, 0.6*inch])
-                table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
-                ]))
-            
-                story.append(table)
-            else:
-                story.append(Paragraph("No Run to Failure assets found.", styles['Normal']))
-        
-            doc.build(story)
-            messagebox.showinfo("Success", f"Run to Failure report exported to: {filename}")
-        
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export Run to Failure report: {str(e)}")
+        """Stubbed out - Run to Failure functionality replaced with Deactivated tab"""
+        messagebox.showinfo("Feature Replaced",
+                          "The Run to Failure feature has been replaced with the Deactivated Assets feature.\n\n"
+                          "Please use the 'Deactivated' tab and 'Export to PDF' button to export deactivated assets.")
 
     # 11. MARK ASSET AS FOUND
     def mark_asset_found(self):
@@ -15796,279 +15690,15 @@ class AITCMMSSystem:
 
     # 12. REACTIVATE ASSET
     def reactivate_asset(self):
-        """Enhanced method to reactivate multiple run to failure assets at once"""
-        selected = self.run_to_failure_tree.selection()
-        if not selected:
-            messagebox.showwarning("Warning", "Please select one or more assets to reactivate")
-            return
+        """Stubbed out - Run to Failure functionality replaced with Deactivated tab"""
+        messagebox.showinfo("Feature Replaced",
+                          "The Run to Failure feature has been replaced with the Deactivated Assets feature.\n\n"
+                          "To reactivate assets:\n"
+                          "1. Go to the 'Deactivated' tab\n"
+                          "2. Select the asset(s) to reactivate\n"
+                          "3. Click 'Reactivate Asset' button")
+        return
 
-        # Get all selected assets
-        selected_assets = []
-        for item in selected:
-            item_data = self.run_to_failure_tree.item(item)
-            bfm_no = item_data['values'][0]
-            description = item_data['values'][1]
-            selected_assets.append((bfm_no, description))
-    
-        # Create reactivation dialog
-        dialog = tk.Toplevel(self.root)
-        dialog.title(f"Reactivate Assets - {len(selected_assets)} Selected")
-        dialog.geometry("700x650")
-        dialog.transient(self.root)
-        dialog.grab_set()
-    
-        # Center the dialog
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (700 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (650 // 2)
-        dialog.geometry(f"700x650+{x}+{y}")
-    
-        # Header
-        header_frame = ttk.Frame(dialog, padding=15)
-        header_frame.pack(fill='x')
-    
-        if len(selected_assets) == 1:
-            ttk.Label(header_frame, text=f"Reactivate Asset for PM Scheduling", 
-                    font=('Arial', 14, 'bold')).pack()
-            ttk.Label(header_frame, text=f"BFM: {selected_assets[0][0]}", 
-                    font=('Arial', 10)).pack(pady=5)
-            ttk.Label(header_frame, text=f"Description: {selected_assets[0][1]}", 
-                    font=('Arial', 9), wraplength=650).pack()
-        else:
-            ttk.Label(header_frame, text=f"Bulk Reactivate {len(selected_assets)} Assets", 
-                    font=('Arial', 14, 'bold')).pack()
-            ttk.Label(header_frame, text=f"All selected assets will use the same PM frequencies", 
-                    font=('Arial', 10), foreground='blue').pack(pady=5)
-    
-        # Separator
-        ttk.Separator(dialog, orient='horizontal').pack(fill='x', pady=10)
-    
-        # Show list of selected assets if multiple
-        if len(selected_assets) > 1:
-            assets_frame = ttk.LabelFrame(dialog, text=f"Selected Assets ({len(selected_assets)})", padding=10)
-            assets_frame.pack(fill='both', expand=True, padx=20, pady=(0, 10))
-            
-            # Create scrollable list
-            list_container = ttk.Frame(assets_frame)
-            list_container.pack(fill='both', expand=True)
-            
-            assets_tree = ttk.Treeview(list_container, columns=('BFM', 'Description'), 
-                                        show='headings', height=6)
-            assets_tree.heading('BFM', text='BFM Equipment No.')
-            assets_tree.heading('Description', text='Description')
-            assets_tree.column('BFM', width=150)
-            assets_tree.column('Description', width=450)
-            
-            scrollbar = ttk.Scrollbar(list_container, orient='vertical', command=assets_tree.yview)
-            assets_tree.configure(yscrollcommand=scrollbar.set)
-            
-            assets_tree.pack(side='left', fill='both', expand=True)
-            scrollbar.pack(side='right', fill='y')
-            
-            # Add assets to list
-            for bfm, desc in selected_assets:
-                assets_tree.insert('', 'end', values=(bfm, desc))
-    
-        # PM Frequency Selection Frame
-        pm_frame = ttk.LabelFrame(dialog, text="Select PM Frequencies to Enable", padding=20)
-        pm_frame.pack(fill='x', padx=20, pady=10)
-        
-        # Instructions
-        if len(selected_assets) > 1:
-            instruction_text = "These PM frequencies will be applied to ALL selected assets:"
-        else:
-            instruction_text = "Choose which preventive maintenance schedules to enable:"
-    
-        ttk.Label(pm_frame, text=instruction_text,
-                font=('Arial', 10)).pack(anchor='w', pady=(0, 15))
-    
-        # PM Type Checkboxes
-        monthly_var = tk.BooleanVar(value=True)  # Default: Monthly enabled
-        six_month_var = tk.BooleanVar(value=False)  # Default: Six Month disabled
-        annual_var = tk.BooleanVar(value=True)  # Default: Annual enabled
-        
-        # Monthly PM
-        monthly_frame = ttk.Frame(pm_frame)
-        monthly_frame.pack(fill='x', pady=5)
-        monthly_cb = ttk.Checkbutton(monthly_frame, text="Monthly PM (every 30 days)", 
-                                    variable=monthly_var)
-        monthly_cb.pack(side='left')
-        ttk.Label(monthly_frame, text="Recommended for most equipment", 
-                foreground='green', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
-    
-        # Six Month PM
-        six_month_frame = ttk.Frame(pm_frame)
-        six_month_frame.pack(fill='x', pady=5)
-        six_month_cb = ttk.Checkbutton(six_month_frame, text="Six Month PM (every 180 days)", 
-                                        variable=six_month_var)
-        six_month_cb.pack(side='left')
-        ttk.Label(six_month_frame, text="Less frequent PM cycle", 
-                foreground='orange', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
-    
-        # Annual PM
-        annual_frame = ttk.Frame(pm_frame)
-        annual_frame.pack(fill='x', pady=5)
-        annual_cb = ttk.Checkbutton(annual_frame, text="Annual PM (yearly)", 
-                                    variable=annual_var)
-        annual_cb.pack(side='left')
-        ttk.Label(annual_frame, text="Recommended for comprehensive checks", 
-                foreground='green', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
-    
-        # Warning label
-        warning_frame = ttk.Frame(pm_frame)
-        warning_frame.pack(fill='x', pady=15)
-        warning_label = ttk.Label(warning_frame, 
-                                text="Note: You must select at least one PM frequency to reactivate.",
-                                foreground='blue', font=('Arial', 9, 'italic'), wraplength=600)
-        warning_label.pack()
-    
-        # Info box
-        info_frame = ttk.LabelFrame(dialog, text="Reactivation Summary", padding=10)
-        info_frame.pack(fill='x', padx=20, pady=(0, 10))
-        
-        if len(selected_assets) > 1:
-            info_text = f"""This will reactivate {len(selected_assets)} assets:
-        - Set all equipment statuses to Active
-        - Enable selected PM frequencies for all assets
-        - Remove all from Run to Failure list
-        - Resume normal PM scheduling"""
-        else:
-            info_text = """This will:
-        - Set equipment status to Active
-        - Enable selected PM frequencies
-        - Remove from Run to Failure list
-        - Resume normal PM scheduling"""
-    
-        ttk.Label(info_frame, text=info_text, justify='left').pack(anchor='w')
-    
-        def validate_and_reactivate():
-            """Validate selections and reactivate the asset(s)"""
-            # Check that at least one PM type is selected
-            if not monthly_var.get() and not six_month_var.get() and not annual_var.get():
-                messagebox.showerror("Validation Error", 
-                                   "You must select at least one PM frequency to reactivate.\n\n"
-                                   "If you don't want to schedule PMs, leave the assets in Run to Failure status.")
-                return
-        
-            # Build PM list
-            pm_list = []
-            if monthly_var.get():
-                pm_list.append("Monthly")
-            if six_month_var.get():
-                pm_list.append("Six Month")
-            if annual_var.get():
-                pm_list.append("Annual")
-        
-            pm_enabled = ", ".join(pm_list)
-        
-            # Confirmation
-            if len(selected_assets) == 1:
-                confirm_msg = (f"Reactivate asset {selected_assets[0][0]}?\n\n"
-                              f"Equipment will be set to Active status with:\n"
-                              f"PM Frequencies: {pm_enabled}\n\n"
-                              f"Continue?")
-            else:
-                confirm_msg = (f"Reactivate {len(selected_assets)} assets?\n\n"
-                              f"All assets will be set to Active status with:\n"
-                              f"PM Frequencies: {pm_enabled}\n\n"
-                              f"Continue?")
-        
-            result = messagebox.askyesno("Confirm Reactivation", confirm_msg)
-        
-            if not result:
-                return
-        
-            # Perform reactivation
-            try:
-                cursor = self.conn.cursor()
-            
-                successful = 0
-                failed = []
-            
-                for bfm_no, description in selected_assets:
-                    try:
-                        # Update equipment status and enable selected PMs
-                        cursor.execute('''
-                            UPDATE equipment SET 
-                            status = 'Active',
-                            monthly_pm = %s,
-                            six_month_pm = %s,
-                            annual_pm = %s,
-                            updated_date = CURRENT_TIMESTAMP
-                            WHERE bfm_equipment_no = %s
-                        ''', (
-                            True if monthly_var.get() else False,
-                            True if six_month_var.get() else False,
-                            True if annual_var.get() else False,
-                            bfm_no
-                        ))
-                    
-                        # Remove from run_to_failure_assets table
-                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-                    
-                        successful += 1
-                    
-                    except Exception as e:
-                        failed.append(f"{bfm_no}: {str(e)}")
-            
-                self.conn.commit()
-            
-                # Show results
-                if len(selected_assets) == 1:
-                    messagebox.showinfo(
-                        "Success", 
-                        f"Asset {selected_assets[0][0]} successfully reactivated!\n\n"
-                        f"Status: Active\n"
-                        f"PMs Enabled: {pm_enabled}\n\n"
-                        f"Equipment moved back to main equipment list"
-                    )
-                else:
-                    result_msg = f"Bulk Reactivation Complete!\n\n"
-                    result_msg += f"Successfully reactivated: {successful} assets\n"
-                    if failed:
-                        result_msg += f"Failed: {len(failed)} assets\n\n"
-                        result_msg += "Failed assets:\n" + "\n".join(failed[:5])
-                        if len(failed) > 5:
-                            result_msg += f"\n... and {len(failed) - 5} more"
-                
-                    result_msg += f"\n\nPMs Enabled: {pm_enabled}"
-                
-                    if failed:
-                        messagebox.showwarning("Partial Success", result_msg)
-                    else:
-                        messagebox.showinfo("Success", result_msg)
-            
-                dialog.destroy()
-            
-                # Refresh all displays
-                self.refresh_equipment_list()
-                self.load_run_to_failure_assets()
-                self.update_equipment_statistics()
-            
-                if len(selected_assets) == 1:
-                    self.update_status(f"Reactivated asset {selected_assets[0][0]} with {pm_enabled} PMs")
-                else:
-                    self.update_status(f"Reactivated {successful} assets with {pm_enabled} PMs")
-            
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to reactivate assets: {str(e)}")
-    
-        # Buttons
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(fill='x', padx=20, pady=15)
-        
-        if len(selected_assets) == 1:
-            button_text = "CHECK: Reactivate Asset"
-        else:
-            button_text = f"CHECK: Reactivate {len(selected_assets)} Assets"
-    
-        ttk.Button(button_frame, text=button_text, 
-                   command=validate_and_reactivate,
-                   style='Accent.TButton').pack(side='left', padx=5)
-        ttk.Button(button_frame, text="Cancel", 
-                   command=dialog.destroy).pack(side='left', padx=5)
-    
-    
     def clear_completion_form(self):
         """Clear the PM completion form"""
         self.completion_bfm_var.set('')
