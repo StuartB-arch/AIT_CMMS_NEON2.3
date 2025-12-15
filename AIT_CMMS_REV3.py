@@ -10490,6 +10490,25 @@ class AITCMMSSystem:
                 )
             ''')
 
+            # Deactivated Assets table - For tracking deactivated equipment
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS deactivated_assets (
+                    id SERIAL PRIMARY KEY,
+                    bfm_equipment_no TEXT UNIQUE,
+                    description TEXT,
+                    location TEXT,
+                    deactivated_by TEXT,
+                    deactivated_date TEXT,
+                    technician_name TEXT,
+                    reason TEXT,
+                    status TEXT DEFAULT 'Deactivated',
+                    notes TEXT,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (bfm_equipment_no) REFERENCES equipment (bfm_equipment_no)
+                )
+            ''')
+
             # ===== MULTI-USER SUPPORT TABLES =====
             # Users table for authentication
             cursor.execute('''
@@ -10778,7 +10797,7 @@ class AITCMMSSystem:
         self.create_cm_management_tab()
         #self.create_analytics_dashboard_tab()
         self.create_cannot_find_tab()
-        self.create_run_to_failure_tab()
+        self.create_deactivated_tab()
         self.create_pm_history_search_tab()
         self.create_custom_pm_templates_tab()
         self.mro_manager.create_mro_tab(self.notebook)
@@ -11168,8 +11187,8 @@ class AITCMMSSystem:
         self.stats_cf_label = ttk.Label(stats_frame, text="Cannot Find: 0", font=('Arial', 10, 'bold'), foreground='red')
         self.stats_cf_label.pack(side='left', padx=20)
 
-        self.stats_rtf_label = ttk.Label(stats_frame, text="Run to Failure: 0", font=('Arial', 10, 'bold'), foreground='orange')
-        self.stats_rtf_label.pack(side='left', padx=20)
+        self.stats_deact_label = ttk.Label(stats_frame, text="Deactivated: 0", font=('Arial', 10, 'bold'), foreground='orange')
+        self.stats_deact_label.pack(side='left', padx=20)
 
         self.stats_active_label = ttk.Label(stats_frame, text="Active Assets: 0", font=('Arial', 10, 'bold'), foreground='green')
         self.stats_active_label.pack(side='left', padx=20)
@@ -11378,15 +11397,15 @@ class AITCMMSSystem:
             cursor.execute('SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = %s', ('Missing',))
             cannot_find_count = cursor.fetchone()[0]
 
-            # Get Run to Failure count from equipment table
-            cursor.execute('SELECT COUNT(*) FROM equipment WHERE status = %s', ('Run to Failure',))
-            rtf_count = cursor.fetchone()[0]
+            # Get Deactivated count from deactivated_assets table
+            cursor.execute('SELECT COUNT(DISTINCT bfm_equipment_no) FROM deactivated_assets WHERE status = %s', ('Deactivated',))
+            deactivated_count = cursor.fetchone()[0]
 
-            # Active assets = Total - Cannot Find - Run to Failure
+            # Active assets = Total - Cannot Find - Deactivated
             # This ensures the numbers add up correctly
-            active_assets = total_assets - cannot_find_count - rtf_count
+            active_assets = total_assets - cannot_find_count - deactivated_count
 
-            # Get PM counts for active assets only (excluding Cannot Find and Run to Failure)
+            # Get PM counts for active assets only (excluding Cannot Find and Deactivated)
             # Calculate ANNUAL PM WORKLOAD (total PMs per year, not just equipment count)
 
             # Monthly PM count - multiply by 12 (12 times per year)
@@ -11397,7 +11416,10 @@ class AITCMMSSystem:
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
-            ''', ('Run to Failure', 'Missing'))
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
+                )
+            ''', ('Deactivated', 'Missing', 'Deactivated'))
             monthly_equipment_count = cursor.fetchone()[0]
             monthly_pm_count = monthly_equipment_count * 12  # 12 monthly PMs per year per asset
 
@@ -11409,7 +11431,10 @@ class AITCMMSSystem:
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
-            ''', ('Run to Failure', 'Missing'))
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
+                )
+            ''', ('Deactivated', 'Missing', 'Deactivated'))
             six_month_equipment_count = cursor.fetchone()[0]
             six_month_pm_count = six_month_equipment_count * 2  # 2 six-month PMs per year per asset
 
@@ -11421,7 +11446,10 @@ class AITCMMSSystem:
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
-            ''', ('Run to Failure', 'Missing'))
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
+                )
+            ''', ('Deactivated', 'Missing', 'Deactivated'))
             annual_equipment_count = cursor.fetchone()[0]
             annual_pm_count = annual_equipment_count * 1  # 1 annual PM per year per asset
 
@@ -11433,7 +11461,10 @@ class AITCMMSSystem:
                 AND e.bfm_equipment_no NOT IN (
                     SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
                 )
-            ''', ('Run to Failure', 'Missing'))
+                AND e.bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
+                )
+            ''', ('Deactivated', 'Missing', 'Deactivated'))
             weekly_equipment_count = cursor.fetchone()[0]
             weekly_pm_count = weekly_equipment_count * 52  # 52 weekly PMs per year per asset
 
@@ -11441,7 +11472,7 @@ class AITCMMSSystem:
             self.stats_total_label.config(text=f"Total Assets: {total_assets}")
             self.stats_active_label.config(text=f"Active Assets: {active_assets}")
             self.stats_cf_label.config(text=f"Cannot Find: {cannot_find_count}")
-            self.stats_rtf_label.config(text=f"Run to Failure: {rtf_count}")
+            self.stats_deact_label.config(text=f"Deactivated: {deactivated_count}")
             self.stats_weekly_pm_label.config(text=f"Weekly PMs: {weekly_pm_count}/year ({weekly_equipment_count} assets)")
             self.stats_monthly_pm_label.config(text=f"Monthly PMs: {monthly_pm_count}/year ({monthly_equipment_count} assets)")
             self.stats_six_month_pm_label.config(text=f"6-Month PMs: {six_month_pm_count}/year ({six_month_equipment_count} assets)")
@@ -12864,59 +12895,59 @@ class AITCMMSSystem:
 
     
         
-    def create_run_to_failure_tab(self):
-        """Run to Failure Assets tab"""
-        self.run_to_failure_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.run_to_failure_frame, text="Run to Failure Assets")
-    
+    def create_deactivated_tab(self):
+        """Deactivated Assets tab"""
+        self.deactivated_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.deactivated_frame, text="Deactivated")
+
         # Controls
-        controls_frame = ttk.LabelFrame(self.run_to_failure_frame, text="Run to Failure Controls", padding=10)
+        controls_frame = ttk.LabelFrame(self.deactivated_frame, text="Deactivated Asset Controls", padding=10)
         controls_frame.pack(fill='x', padx=10, pady=5)
-    
-        ttk.Button(controls_frame, text="Refresh List", 
-                command=self.load_run_to_failure_assets).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Export to PDF", 
-                command=self.export_run_to_failure_pdf).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Reactivate Asset", 
-                command=self.reactivate_asset).pack(side='left', padx=5)
-    
-        # Run to Failure list
-        list_frame = ttk.LabelFrame(self.run_to_failure_frame, text="Run to Failure Assets", padding=10)
+
+        ttk.Button(controls_frame, text="Refresh List",
+                command=self.load_deactivated_assets).pack(side='left', padx=5)
+        ttk.Button(controls_frame, text="Export to PDF",
+                command=self.export_deactivated_pdf).pack(side='left', padx=5)
+        ttk.Button(controls_frame, text="Reactivate Asset",
+                command=self.reactivate_deactivated_asset).pack(side='left', padx=5)
+
+        # Deactivated assets list
+        list_frame = ttk.LabelFrame(self.deactivated_frame, text="Deactivated Assets", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
-        self.run_to_failure_tree = ttk.Treeview(list_frame,
-                                            columns=('BFM', 'Description', 'Location', 'Technician', 'Completion Date', 'Hours'),
+
+        self.deactivated_tree = ttk.Treeview(list_frame,
+                                            columns=('BFM', 'Description', 'Location', 'Deactivated By', 'Deactivated Date', 'Reason'),
                                             show='headings',
                                             selectmode='extended')
-    
+
         columns_config = {
             'BFM': ('BFM Equipment No.', 130),
             'Description': ('Description', 250),
             'Location': ('Location', 120),
-            'Technician': ('Completed By', 120),
-            'Completion Date': ('Completion Date', 120),
-            'Hours': ('Hours', 80)
+            'Deactivated By': ('Deactivated By', 120),
+            'Deactivated Date': ('Deactivated Date', 120),
+            'Reason': ('Reason', 200)
         }
-    
+
         for col, (heading, width) in columns_config.items():
-            self.run_to_failure_tree.heading(col, text=heading)
-            self.run_to_failure_tree.column(col, width=width)
-    
+            self.deactivated_tree.heading(col, text=heading)
+            self.deactivated_tree.column(col, width=width)
+
         # Scrollbars
-        rtf_v_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.run_to_failure_tree.yview)
-        rtf_h_scrollbar = ttk.Scrollbar(list_frame, orient='horizontal', command=self.run_to_failure_tree.xview)
-        self.run_to_failure_tree.configure(yscrollcommand=rtf_v_scrollbar.set, xscrollcommand=rtf_h_scrollbar.set)
-    
+        deact_v_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.deactivated_tree.yview)
+        deact_h_scrollbar = ttk.Scrollbar(list_frame, orient='horizontal', command=self.deactivated_tree.xview)
+        self.deactivated_tree.configure(yscrollcommand=deact_v_scrollbar.set, xscrollcommand=deact_h_scrollbar.set)
+
         # Pack treeview and scrollbars
-        self.run_to_failure_tree.grid(row=0, column=0, sticky='nsew')
-        rtf_v_scrollbar.grid(row=0, column=1, sticky='ns')
-        rtf_h_scrollbar.grid(row=1, column=0, sticky='ew')
-    
+        self.deactivated_tree.grid(row=0, column=0, sticky='nsew')
+        deact_v_scrollbar.grid(row=0, column=1, sticky='ns')
+        deact_h_scrollbar.grid(row=1, column=0, sticky='ew')
+
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
-    
+
         # Load initial data
-        self.load_run_to_failure_assets()
+        self.load_deactivated_assets()
 
 
     
@@ -15006,6 +15037,42 @@ class AITCMMSSystem:
             else:
                 self.update_status(f"Showing {total_count} Cannot Find assets")
 
+    def load_deactivated_assets(self):
+        """Load deactivated assets data"""
+        try:
+            # Clear existing items
+            for item in self.deactivated_tree.get_children():
+                self.deactivated_tree.delete(item)
+
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT bfm_equipment_no, description, location, deactivated_by, deactivated_date, reason
+                FROM deactivated_assets
+                WHERE status = 'Deactivated'
+                ORDER BY deactivated_date DESC
+            ''')
+
+            assets = cursor.fetchall()
+
+            for asset in assets:
+                bfm_no, description, location, deactivated_by, deactivated_date, reason = asset
+                self.deactivated_tree.insert('', 'end', values=(
+                    bfm_no,
+                    description or '',
+                    location or '',
+                    deactivated_by or '',
+                    deactivated_date or '',
+                    reason or ''
+                ))
+
+            # Update status bar
+            count = len(assets)
+            if hasattr(self, 'update_status'):
+                self.update_status(f"Showing {count} Deactivated assets")
+
+        except Exception as e:
+            print(f"Error loading deactivated assets: {e}")
+
 
 
 
@@ -15073,6 +15140,110 @@ class AITCMMSSystem:
             
             
     # 9. EXPORT CANNOT FIND TO PDF
+    def export_deactivated_pdf(self):
+        """Export Deactivated assets to PDF"""
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_filename = f"Deactivated_Assets_{timestamp}.pdf"
+
+            # Ask user where to save the file
+            filename = filedialog.asksaveasfilename(
+                title="Save Deactivated Assets Report",
+                initialdir=os.path.expanduser("~/Documents"),
+                initialfile=default_filename,
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+            )
+
+            if not filename:
+                return  # User cancelled
+
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT
+                    da.bfm_equipment_no,
+                    e.sap_material_no,
+                    da.description,
+                    da.location,
+                    da.deactivated_by,
+                    da.deactivated_date,
+                    da.reason,
+                    da.notes
+                FROM deactivated_assets da
+                LEFT JOIN equipment e ON da.bfm_equipment_no = e.bfm_equipment_no
+                WHERE da.status = 'Deactivated'
+                ORDER BY da.deactivated_date DESC
+            ''')
+
+            assets = cursor.fetchall()
+
+            doc = SimpleDocTemplate(filename, pagesize=letter)
+            story = []
+            styles = getSampleStyleSheet()
+
+            # Title
+            title_style = ParagraphStyle('TitleStyle', parent=styles['Title'],
+                                    fontSize=18, textColor=colors.darkred, alignment=1)
+            story.append(Paragraph("AIRBUS AIT - DEACTIVATED ASSETS REPORT", title_style))
+            story.append(Spacer(1, 20))
+
+            # Report info
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+            story.append(Paragraph(f"Total Deactivated Assets: {len(assets)}", styles['Normal']))
+            story.append(Spacer(1, 20))
+
+            if assets:
+                # Create table with proper column widths
+                data = [['SAP No.', 'BFM No.', 'Description', 'Location', 'Deactivated By', 'Date', 'Reason']]
+
+                # Create a style for wrapping text in cells with word wrap enabled
+                cell_style = ParagraphStyle(
+                    'CellStyle',
+                    parent=styles['Normal'],
+                    fontSize=8,
+                    leading=10,
+                    wordWrap='CJK'  # Enable word wrapping
+                )
+
+                for asset in assets:
+                    bfm_no, sap_no, description, location, deactivated_by, deactivated_date, reason, notes = asset
+                    data.append([
+                        Paragraph(str(sap_no or 'N/A'), cell_style),
+                        Paragraph(str(bfm_no or 'N/A'), cell_style),
+                        Paragraph(str(description or ''), cell_style),
+                        Paragraph(str(location or ''), cell_style),
+                        Paragraph(str(deactivated_by or ''), cell_style),
+                        Paragraph(str(deactivated_date or ''), cell_style),
+                        Paragraph(str(reason or ''), cell_style)
+                    ])
+
+                # Adjusted column widths
+                table = Table(data, colWidths=[0.85*inch, 0.85*inch, 1.8*inch, 0.9*inch, 0.9*inch, 0.8*inch, 1.3*inch])
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('TOPPADDING', (0, 1), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                    ('WORDWRAP', (0, 0), (-1, -1), True)
+                ]))
+
+                story.append(table)
+            else:
+                story.append(Paragraph("No deactivated assets found.", styles['Normal']))
+
+            doc.build(story)
+            messagebox.showinfo("Success", f"Deactivated Assets report exported to: {filename}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export PDF: {str(e)}")
+
     def export_cannot_find_pdf(self):
         """Export Cannot Find assets to PDF"""
         try:
@@ -15419,6 +15590,193 @@ class AITCMMSSystem:
                 # Refresh all displays
                 self.refresh_equipment_list()
                 self.load_cannot_find_assets()
+                self.update_equipment_statistics()
+
+                self.update_status(f"Reactivated asset {bfm_no} with {pm_enabled} PMs")
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to reactivate asset: {str(e)}")
+
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill='x', padx=20, pady=15)
+
+        ttk.Button(button_frame, text="Reactivate Asset",
+                   command=validate_and_reactivate,
+                   style='Accent.TButton').pack(side='right', padx=5)
+        ttk.Button(button_frame, text="Cancel",
+                   command=dialog.destroy).pack(side='right')
+
+    def reactivate_deactivated_asset(self):
+        """Reactivate a deactivated asset and restore with PM configuration"""
+        selected = self.deactivated_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select an asset to reactivate")
+            return
+
+        item = self.deactivated_tree.item(selected[0])
+        bfm_no = str(item['values'][0])
+        description = str(item['values'][1]) if len(item['values']) > 1 else "N/A"
+
+        # Create reactivation dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Reactivate Asset - {bfm_no}")
+        dialog.geometry("700x550")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (700 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (550 // 2)
+        dialog.geometry(f"700x550+{x}+{y}")
+
+        # Header
+        header_frame = ttk.Frame(dialog, padding=15)
+        header_frame.pack(fill='x')
+
+        ttk.Label(header_frame, text=f"Reactivate Deactivated Asset for PM Scheduling",
+                font=('Arial', 14, 'bold')).pack()
+        ttk.Label(header_frame, text=f"BFM: {bfm_no}",
+                font=('Arial', 10)).pack(pady=5)
+        ttk.Label(header_frame, text=f"Description: {description}",
+                font=('Arial', 9), wraplength=650).pack()
+
+        # Separator
+        ttk.Separator(dialog, orient='horizontal').pack(fill='x', pady=10)
+
+        # PM Frequency Selection Frame
+        pm_frame = ttk.LabelFrame(dialog, text="Select PM Frequencies to Enable", padding=20)
+        pm_frame.pack(fill='x', padx=20, pady=10)
+
+        ttk.Label(pm_frame, text="Choose which preventive maintenance schedules to enable:",
+                font=('Arial', 10)).pack(anchor='w', pady=(0, 15))
+
+        # PM Type Checkboxes
+        monthly_var = tk.BooleanVar(value=True)  # Default: Monthly enabled
+        six_month_var = tk.BooleanVar(value=False)  # Default: Six Month disabled
+        annual_var = tk.BooleanVar(value=True)  # Default: Annual enabled
+
+        # Monthly PM
+        monthly_frame = ttk.Frame(pm_frame)
+        monthly_frame.pack(fill='x', pady=5)
+        monthly_cb = ttk.Checkbutton(monthly_frame, text="Monthly PM (every 30 days)",
+                                    variable=monthly_var)
+        monthly_cb.pack(side='left')
+        ttk.Label(monthly_frame, text="Recommended for most equipment",
+                foreground='green', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
+
+        # Six Month PM
+        six_month_frame = ttk.Frame(pm_frame)
+        six_month_frame.pack(fill='x', pady=5)
+        six_month_cb = ttk.Checkbutton(six_month_frame, text="Six Month PM (every 180 days)",
+                                       variable=six_month_var)
+        six_month_cb.pack(side='left')
+        ttk.Label(six_month_frame, text="For semi-annual maintenance",
+                foreground='blue', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
+
+        # Annual PM
+        annual_frame = ttk.Frame(pm_frame)
+        annual_frame.pack(fill='x', pady=5)
+        annual_cb = ttk.Checkbutton(annual_frame, text="Annual PM (every 365 days)",
+                                    variable=annual_var)
+        annual_cb.pack(side='left')
+        ttk.Label(annual_frame, text="For yearly inspection",
+                foreground='orange', font=('Arial', 8, 'italic')).pack(side='left', padx=10)
+
+        # Information text
+        info_frame = ttk.Frame(dialog, padding=20)
+        info_frame.pack(fill='x', padx=20, pady=10)
+
+        info_text = ("The asset will be:\n"
+                    "• Removed from the Deactivated list\n"
+                    "• Set to Active status in the main equipment list\n"
+                    "• Scheduled for the selected preventive maintenance frequencies")
+
+        ttk.Label(info_frame, text=info_text, font=('Arial', 9),
+                foreground='#444444', justify='left').pack(anchor='w')
+
+        def validate_and_reactivate():
+            """Validate selections and perform reactivation"""
+            # Validate at least one PM is selected
+            if not monthly_var.get() and not six_month_var.get() and not annual_var.get():
+                messagebox.showerror("Validation Error",
+                                   "You must select at least one PM frequency to reactivate.\n\n"
+                                   "If you don't want to schedule PMs, leave the asset in Deactivated status.")
+                return
+
+            # Build PM list
+            pm_list = []
+            if monthly_var.get():
+                pm_list.append("Monthly")
+            if six_month_var.get():
+                pm_list.append("Six Month")
+            if annual_var.get():
+                pm_list.append("Annual")
+
+            pm_enabled = ", ".join(pm_list)
+
+            # Confirmation
+            confirm_msg = (f"Reactivate asset {bfm_no}?\n\n"
+                          f"Equipment will be:\n"
+                          f"• Set to Active status\n"
+                          f"• PM Frequencies: {pm_enabled}\n"
+                          f"• Removed from Deactivated list\n\n"
+                          f"Continue?")
+
+            result = messagebox.askyesno("Confirm Reactivation", confirm_msg)
+
+            if not result:
+                return
+
+            # Perform reactivation
+            try:
+                cursor = self.conn.cursor()
+
+                # Update equipment status and enable selected PMs
+                cursor.execute('''
+                    UPDATE equipment SET
+                    status = 'Active',
+                    monthly_pm = %s,
+                    six_month_pm = %s,
+                    annual_pm = %s,
+                    updated_date = CURRENT_TIMESTAMP
+                    WHERE bfm_equipment_no = %s
+                ''', (
+                    True if monthly_var.get() else False,
+                    True if six_month_var.get() else False,
+                    True if annual_var.get() else False,
+                    bfm_no
+                ))
+
+                # Remove from deactivated_assets table
+                cursor.execute('''
+                    DELETE FROM deactivated_assets
+                    WHERE bfm_equipment_no = %s
+                ''', (bfm_no,))
+
+                # Update any "Deactivated" PM schedules back to "Scheduled"
+                cursor.execute('''
+                    UPDATE weekly_pm_schedules
+                    SET status = 'Scheduled'
+                    WHERE bfm_equipment_no = %s AND status = 'Deactivated'
+                ''', (bfm_no,))
+
+                self.conn.commit()
+
+                messagebox.showinfo(
+                    "Success",
+                    f"Asset {bfm_no} successfully reactivated!\n\n"
+                    f"Status: Active\n"
+                    f"PMs Enabled: {pm_enabled}\n\n"
+                    f"Equipment moved back to main equipment list"
+                )
+
+                dialog.destroy()
+
+                # Refresh all displays
+                self.refresh_equipment_list()
+                self.load_deactivated_assets()
                 self.update_equipment_statistics()
 
                 self.update_status(f"Reactivated asset {bfm_no} with {pm_enabled} PMs")
@@ -19698,8 +20056,8 @@ class AITCMMSSystem:
         annual_cb = ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var)
         annual_cb.pack(anchor='w')
 
-        # Disable PM checkboxes if currently Cannot Find or Run to Failure
-        if current_status in ['Run to Failure', 'Cannot Find']:
+        # Disable PM checkboxes if currently Cannot Find, Run to Failure, or Deactivated
+        if current_status in ['Run to Failure', 'Cannot Find', 'Deactivated']:
             weekly_cb.config(state='disabled')
             monthly_cb.config(state='disabled')
             six_month_cb.config(state='disabled')
@@ -19723,19 +20081,32 @@ class AITCMMSSystem:
 
         # Cannot Find option - NEW!
         cannot_find_var = tk.BooleanVar(value=(current_status == 'Cannot Find'))
-        cf_cb = ttk.Checkbutton(pm_frame, text="Mark as Cannot Find", 
+        cf_cb = ttk.Checkbutton(pm_frame, text="Mark as Cannot Find",
                             variable=cannot_find_var,
                             command=lambda: toggle_status_options())
         cf_cb.pack(anchor='w', pady=5)
 
         # Cannot Find warning label
-        cf_warning_label = ttk.Label(pm_frame, text="Status: Will be set to Cannot Find (PMs disabled)", 
+        cf_warning_label = ttk.Label(pm_frame, text="Status: Will be set to Cannot Find (PMs disabled)",
                                     foreground='red', font=('Arial', 9, 'italic'))
         if cannot_find_var.get():
             cf_warning_label.pack(anchor='w', padx=20)
 
+        # Deactivated option
+        deactivated_var = tk.BooleanVar(value=(current_status == 'Deactivated'))
+        deact_cb = ttk.Checkbutton(pm_frame, text="Mark as Deactivated",
+                            variable=deactivated_var,
+                            command=lambda: toggle_status_options())
+        deact_cb.pack(anchor='w', pady=5)
+
+        # Deactivated warning label
+        deact_warning_label = ttk.Label(pm_frame, text="Status: Will be set to Deactivated (PMs disabled)",
+                                    foreground='red', font=('Arial', 9, 'italic'))
+        if deactivated_var.get():
+            deact_warning_label.pack(anchor='w', padx=20)
+
         # Status info
-        status_label = ttk.Label(pm_frame, text=f"Current Status: {current_status}", 
+        status_label = ttk.Label(pm_frame, text=f"Current Status: {current_status}",
                                 font=('Arial', 9, 'italic'))
         status_label.pack(anchor='w', pady=5)
 
@@ -19743,7 +20114,7 @@ class AITCMMSSystem:
         tech_frame = ttk.Frame(pm_frame)
         ttk.Label(tech_frame, text="Reported By:").pack(side='left', padx=(0, 5))
         tech_var = tk.StringVar()
-    
+
         # Pre-populate technician if asset is already Cannot Find
         if current_status == 'Cannot Find':
             try:
@@ -19754,10 +20125,36 @@ class AITCMMSSystem:
                         tech_var.set(cf_data[0])
             except Exception as e:
                 print(f"Warning: Could not fetch technician data: {e}")
-    
+
         tech_combo = ttk.Combobox(tech_frame, textvariable=tech_var, width=20)
         tech_combo['values'] = self.technicians if hasattr(self, 'technicians') else []
         tech_combo.pack(side='left')
+
+        # Technician/Reason selection for Deactivated (appears when Deactivated is checked)
+        deact_frame = ttk.Frame(pm_frame)
+        ttk.Label(deact_frame, text="Deactivated By:").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        deact_tech_var = tk.StringVar()
+
+        # Pre-populate technician if asset is already Deactivated
+        deact_reason_var = tk.StringVar()
+        if current_status == 'Deactivated':
+            try:
+                with db_pool.get_cursor(commit=False) as cursor:
+                    cursor.execute('SELECT deactivated_by, reason FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                    deact_data = cursor.fetchone()
+                    if deact_data:
+                        deact_tech_var.set(deact_data[0])
+                        deact_reason_var.set(deact_data[1] if deact_data[1] else '')
+            except Exception as e:
+                print(f"Warning: Could not fetch deactivated data: {e}")
+
+        deact_tech_combo = ttk.Combobox(deact_frame, textvariable=deact_tech_var, width=20)
+        deact_tech_combo['values'] = self.technicians if hasattr(self, 'technicians') else []
+        deact_tech_combo.grid(row=0, column=1, sticky='w')
+
+        ttk.Label(deact_frame, text="Reason:").grid(row=1, column=0, sticky='w', padx=(0, 5), pady=5)
+        deact_reason_entry = ttk.Entry(deact_frame, textvariable=deact_reason_var, width=40)
+        deact_reason_entry.grid(row=1, column=1, sticky='w', pady=5)
     
         # Show tech frame and warning if already Cannot Find
         if cannot_find_var.get():
@@ -19765,15 +20162,23 @@ class AITCMMSSystem:
             cf_warning_label.pack(anchor='w', padx=20)
         if run_to_failure_var.get():
             rtf_warning_label.pack(anchor='w', padx=20)
+        if deactivated_var.get():
+            deact_frame.pack(anchor='w', pady=5, padx=20)
+            deact_warning_label.pack(anchor='w', padx=20)
 
         def toggle_status_options():
             """Enable/disable options based on status selections and show/hide warnings"""
-            # Cannot select both Run to Failure and Cannot Find
-            if run_to_failure_var.get() and cannot_find_var.get():
-                # If both are checked, uncheck the other one
-                if run_to_failure_var.get():
-                    cannot_find_var.set(False)
-            
+            # Only allow one status to be selected at a time
+            if run_to_failure_var.get():
+                cannot_find_var.set(False)
+                deactivated_var.set(False)
+            elif cannot_find_var.get():
+                run_to_failure_var.set(False)
+                deactivated_var.set(False)
+            elif deactivated_var.get():
+                run_to_failure_var.set(False)
+                cannot_find_var.set(False)
+
             # Disable PM options if Run to Failure is selected
             if run_to_failure_var.get():
                 weekly_cb.config(state='disabled')
@@ -19786,7 +20191,9 @@ class AITCMMSSystem:
                 annual_var.set(False)
                 rtf_warning_label.pack(anchor='w', padx=20)
                 cf_warning_label.pack_forget()
+                deact_warning_label.pack_forget()
                 tech_frame.pack_forget()
+                deact_frame.pack_forget()
             elif cannot_find_var.get():
                 # ALSO disable PM options for Cannot Find assets
                 weekly_cb.config(state='disabled')
@@ -19799,7 +20206,24 @@ class AITCMMSSystem:
                 annual_var.set(False)
                 cf_warning_label.pack(anchor='w', padx=20)
                 rtf_warning_label.pack_forget()
+                deact_warning_label.pack_forget()
                 tech_frame.pack(anchor='w', pady=5, padx=20)
+                deact_frame.pack_forget()
+            elif deactivated_var.get():
+                # ALSO disable PM options for Deactivated assets
+                weekly_cb.config(state='disabled')
+                monthly_cb.config(state='disabled')
+                six_month_cb.config(state='disabled')
+                annual_cb.config(state='disabled')
+                weekly_var.set(False)
+                monthly_var.set(False)
+                six_month_var.set(False)
+                annual_var.set(False)
+                deact_warning_label.pack(anchor='w', padx=20)
+                rtf_warning_label.pack_forget()
+                cf_warning_label.pack_forget()
+                tech_frame.pack_forget()
+                deact_frame.pack(anchor='w', pady=5, padx=20)
             else:
                 weekly_cb.config(state='normal')
                 monthly_cb.config(state='normal')
@@ -19807,11 +20231,13 @@ class AITCMMSSystem:
                 annual_cb.config(state='normal')
                 rtf_warning_label.pack_forget()
                 cf_warning_label.pack_forget()
+                deact_warning_label.pack_forget()
                 tech_frame.pack_forget()
+                deact_frame.pack_forget()
 
-        # Run to Failure note
-        note_label = ttk.Label(pm_frame, 
-                              text="Run to Failure and Cannot Find equipment will not be scheduled for PMs",
+        # Status note
+        note_label = ttk.Label(pm_frame,
+                              text="Run to Failure, Cannot Find, and Deactivated equipment will not be scheduled for PMs",
                               font=('Arial', 8), foreground='orange')
         note_label.pack(anchor='w', pady=(5, 0))
 
@@ -19823,6 +20249,8 @@ class AITCMMSSystem:
                     new_status = 'Run to Failure'
                 elif cannot_find_var.get():
                     new_status = 'Cannot Find'
+                elif deactivated_var.get():
+                    new_status = 'Deactivated'
                 else:
                     new_status = 'Active'
 
@@ -19950,7 +20378,55 @@ class AITCMMSSystem:
                         # Remove from Cannot Find table
                         cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
                         technician = None  # Set to None when unmarking
-            
+
+                    # Handle Deactivated status - NEW!
+                    if deactivated_var.get():
+                        # Get technician name and reason
+                        deact_technician = deact_tech_var.get().strip()
+                        deact_reason = deact_reason_var.get().strip()
+                        if not deact_technician:
+                            messagebox.showwarning("Missing Information", "Please select who is deactivating this asset")
+                            return
+
+                        # Add or update in deactivated_assets table
+                        cursor.execute('''
+                            INSERT INTO deactivated_assets
+                            (bfm_equipment_no, description, location, deactivated_by, deactivated_date, reason, status, notes)
+                            VALUES (%s, %s, %s, %s, %s, %s, 'Deactivated', %s)
+                            ON CONFLICT (bfm_equipment_no)
+                            DO UPDATE SET
+                                description = EXCLUDED.description,
+                                location = EXCLUDED.location,
+                                deactivated_by = EXCLUDED.deactivated_by,
+                                deactivated_date = EXCLUDED.deactivated_date,
+                                reason = EXCLUDED.reason,
+                                status = EXCLUDED.status,
+                                notes = EXCLUDED.notes
+                        ''', (
+                            bfm_no,
+                            entries["Description:"].get(),
+                            entries["Location:"].get(),
+                            deact_technician,
+                            datetime.now().strftime('%Y-%m-%d'),
+                            deact_reason,
+                            'Equipment marked as Deactivated via equipment edit dialog'
+                        ))
+
+                        # Remove from other tables if it was there
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        # Update any scheduled PMs for this asset to "Deactivated" status
+                        cursor.execute('''
+                            UPDATE weekly_pm_schedules
+                            SET status = 'Deactivated'
+                            WHERE bfm_equipment_no = %s AND status = 'Scheduled'
+                        ''', (bfm_no,))
+
+                    elif not deactivated_var.get() and current_status == 'Deactivated':
+                        # Remove from Deactivated table
+                        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
                 # Show appropriate success message
                 if run_to_failure_var.get():
                     success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus changed to: Run to Failure\n"
@@ -19963,26 +20439,38 @@ class AITCMMSSystem:
                     success_msg += "- Equipment moved to Cannot Find tab\n"
                     success_msg += "- All PM requirements disabled\n"
                     success_msg += "- No future PMs will be scheduled"
+                elif deactivated_var.get():
+                    success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus changed to: Deactivated\n"
+                    success_msg += f"- Deactivated by: {deact_technician}\n"
+                    if deact_reason:
+                        success_msg += f"- Reason: {deact_reason}\n"
+                    success_msg += "- Equipment moved to Deactivated tab\n"
+                    success_msg += "- All PM requirements disabled\n"
+                    success_msg += "- No future PMs will be scheduled"
                 else:
                     success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus: Active"
-            
+
                 messagebox.showinfo("Success", success_msg)
                 dialog.destroy()
-            
+
                 # Refresh all relevant displays
                 self.refresh_equipment_list()
                 if hasattr(self, 'load_cannot_find_assets'):
                     self.load_cannot_find_assets()
                 if hasattr(self, 'load_run_to_failure_assets'):
                     self.load_run_to_failure_assets()
+                if hasattr(self, 'load_deactivated_assets'):
+                    self.load_deactivated_assets()
                 if hasattr(self, 'update_equipment_statistics'):
                     self.update_equipment_statistics()
-            
+
                 # Update status bar
                 if run_to_failure_var.get():
                     self.update_status(f"Equipment {bfm_no} set to Run to Failure")
                 elif cannot_find_var.get():
                     self.update_status(f"Equipment {bfm_no} marked as Cannot Find")
+                elif deactivated_var.get():
+                    self.update_status(f"Equipment {bfm_no} marked as Deactivated")
                 else:
                     self.update_status(f"Equipment {bfm_no} reactivated")
             
@@ -20265,6 +20753,12 @@ class AITCMMSSystem:
                        monthly_pm, six_month_pm, annual_pm, status
                 FROM equipment
                 WHERE 1=1
+                AND bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = 'Deactivated'
+                )
+                AND bfm_equipment_no NOT IN (
+                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = 'Missing'
+                )
             '''
             params = []
 
