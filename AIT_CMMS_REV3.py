@@ -11479,7 +11479,7 @@ class AITCMMSSystem:
             self.stats_annual_pm_label.config(text=f"Annual PMs: {annual_pm_count}/year ({annual_equipment_count} assets)")
 
             # Update status bar
-            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, RTF: {rtf_count}, Weekly PMs: {weekly_pm_count}/yr ({weekly_equipment_count} assets), Monthly PMs: {monthly_pm_count}/yr ({monthly_equipment_count} assets), 6-Month: {six_month_pm_count}/yr ({six_month_equipment_count} assets), Annual: {annual_pm_count}/yr ({annual_equipment_count} assets)")
+            self.update_status(f"Equipment stats updated - Total: {total_assets}, Active: {active_assets}, CF: {cannot_find_count}, Deactivated: {deactivated_count}, Weekly PMs: {weekly_pm_count}/yr ({weekly_equipment_count} assets), Monthly PMs: {monthly_pm_count}/yr ({monthly_equipment_count} assets), 6-Month: {six_month_pm_count}/yr ({six_month_equipment_count} assets), Annual: {annual_pm_count}/yr ({annual_equipment_count} assets)")
 
         except Exception as e:
             print(f"Error updating equipment statistics: {e}")
