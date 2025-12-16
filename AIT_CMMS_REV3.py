@@ -19577,12 +19577,12 @@ class AITCMMSSystem:
                          picture_1_data, picture_2_data)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
-                        entries["SAP Material No:"].get(),
-                        entries["BFM Equipment No:"].get(),
-                        entries["Description:"].get(),
-                        entries["Tool ID/Drawing No:"].get(),
-                        entries["Location:"].get(),
-                        entries["Master LIN:"].get(),
+                        entries["SAP Material No:"].get().strip(),
+                        entries["BFM Equipment No:"].get().strip(),
+                        entries["Description:"].get().strip(),
+                        entries["Tool ID/Drawing No:"].get().strip(),
+                        entries["Location:"].get().strip(),
+                        entries["Master LIN:"].get().strip(),
                         weekly_var.get(),
                         monthly_var.get(),
                         six_month_var.get(),
@@ -19620,7 +19620,7 @@ class AITCMMSSystem:
 
         # Get selected equipment data
         item = self.equipment_tree.item(selected[0])
-        bfm_no = str(item['values'][1])  # BFM Equipment No.
+        bfm_no = str(item['values'][1]).strip()  # BFM Equipment No. - strip whitespace!
 
         # Fetch full equipment data including photos
         try:
@@ -19629,7 +19629,13 @@ class AITCMMSSystem:
                 equipment_data = cursor.fetchone()
 
                 if not equipment_data:
-                    messagebox.showerror("Error", "Equipment not found in database")
+                    # Enhanced error message with diagnostic info
+                    messagebox.showerror("Error",
+                        f"Equipment not found in database\n\n"
+                        f"Searched for BFM: '{bfm_no}'\n"
+                        f"Length: {len(bfm_no)} characters\n\n"
+                        f"This asset may have been deleted or the BFM number might have special characters.\n"
+                        f"Please run diagnose_assets.py for detailed analysis.")
                     return
         except Exception as e:
             messagebox.showerror("Error", f"Database error: {str(e)}")
@@ -20091,12 +20097,12 @@ class AITCMMSSystem:
                             picture_2_data = %s
                         WHERE bfm_equipment_no = %s
                     ''', (
-                        entries["SAP Material No:"].get(),
-                        new_bfm_no,  # New BFM number
-                        entries["Description:"].get(),
-                        entries["Tool ID/Drawing No:"].get(),
-                        entries["Location:"].get(),
-                        entries["Master LIN:"].get(),
+                        entries["SAP Material No:"].get().strip(),
+                        new_bfm_no,  # New BFM number (already stripped above)
+                        entries["Description:"].get().strip(),
+                        entries["Tool ID/Drawing No:"].get().strip(),
+                        entries["Location:"].get().strip(),
+                        entries["Master LIN:"].get().strip(),
                         weekly_var.get(),
                         monthly_var.get(),
                         six_month_var.get(),
