@@ -19902,10 +19902,24 @@ class AITCMMSSystem:
 
                 # Use connection pool for database operations
                 with db_pool.get_cursor(commit=True) as cursor:
-                    # Update equipment table including photos
+                    # Get the new BFM number from the entry (might be changed)
+                    new_bfm_no = entries["BFM Equipment No:"].get().strip()
+
+                    # Check if BFM number has changed
+                    bfm_changed = (new_bfm_no != bfm_no)
+
+                    # If BFM changed, verify the new BFM doesn't already exist
+                    if bfm_changed:
+                        cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (new_bfm_no,))
+                        if cursor.fetchone()[0] > 0:
+                            messagebox.showerror("Error", f"BFM Equipment No '{new_bfm_no}' already exists. Please use a unique BFM number.")
+                            return
+
+                    # Update equipment table including photos and BFM number
                     cursor.execute('''
                         UPDATE equipment
                         SET sap_material_no = %s,
+                            bfm_equipment_no = %s,
                             description = %s,
                             tool_id_drawing_no = %s,
                             location = %s,
@@ -19920,6 +19934,7 @@ class AITCMMSSystem:
                         WHERE bfm_equipment_no = %s
                     ''', (
                         entries["SAP Material No:"].get(),
+                        new_bfm_no,  # New BFM number
                         entries["Description:"].get(),
                         entries["Tool ID/Drawing No:"].get(),
                         entries["Location:"].get(),
@@ -19931,8 +19946,40 @@ class AITCMMSSystem:
                         new_status,
                         pic1_data,
                         pic2_data,
-                        bfm_no
+                        bfm_no  # OLD BFM number in WHERE clause
                     ))
+
+                    # If BFM changed, update all related tables with foreign keys
+                    if bfm_changed:
+                        # Update cannot_find_assets
+                        cursor.execute('UPDATE cannot_find_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update deactivated_assets
+                        cursor.execute('UPDATE deactivated_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update run_to_failure_assets
+                        cursor.execute('UPDATE run_to_failure_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update PM schedules
+                        cursor.execute('UPDATE weekly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE monthly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE six_month_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE annual_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update PM completions
+                        cursor.execute('UPDATE pm_completions SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update corrective maintenance
+                        cursor.execute('UPDATE corrective_maintenance SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
 
                     # Handle Run to Failure status
                     if run_to_failure_var.get() and current_status != 'Run to Failure':
@@ -19949,7 +19996,7 @@ class AITCMMSSystem:
                                 labor_hours = EXCLUDED.labor_hours,
                                 notes = EXCLUDED.notes
                         ''', (
-                            bfm_no,
+                            new_bfm_no,
                             entries["Description:"].get(),
                             entries["Location:"].get(),
                             'System Change',
@@ -19959,10 +20006,10 @@ class AITCMMSSystem:
                         ))
 
                         # Remove from Cannot Find if it was there
-                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
 
                     elif not run_to_failure_var.get() and current_status == 'Run to Failure':
-                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
 
                     # Handle Cannot Find status - NEW!
                     if cannot_find_var.get():
@@ -19986,7 +20033,7 @@ class AITCMMSSystem:
                                 status = EXCLUDED.status,
                                 notes = EXCLUDED.notes
                         ''', (
-                            bfm_no,
+                            new_bfm_no,
                             entries["Description:"].get(),
                             entries["Location:"].get(),
                             technician,
@@ -19995,18 +20042,18 @@ class AITCMMSSystem:
                         ))
 
                         # Remove from Run to Failure if it was there
-                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
 
                         # Update any scheduled PMs for this asset to "Cannot Find" status
                         cursor.execute('''
                             UPDATE weekly_pm_schedules
                             SET status = 'Cannot Find'
                             WHERE bfm_equipment_no = %s AND status = 'Scheduled'
-                        ''', (bfm_no,))
+                        ''', (new_bfm_no,))
 
                     elif not cannot_find_var.get() and current_status == 'Cannot Find':
                         # Remove from Cannot Find table
-                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
                         technician = None  # Set to None when unmarking
 
                     # Handle Deactivated status - NEW!
@@ -20033,7 +20080,7 @@ class AITCMMSSystem:
                                 status = EXCLUDED.status,
                                 notes = EXCLUDED.notes
                         ''', (
-                            bfm_no,
+                            new_bfm_no,
                             entries["Description:"].get(),
                             entries["Location:"].get(),
                             deact_technician,
@@ -20043,34 +20090,34 @@ class AITCMMSSystem:
                         ))
 
                         # Remove from other tables if it was there
-                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
 
                         # Update any scheduled PMs for this asset to "Deactivated" status
                         cursor.execute('''
                             UPDATE weekly_pm_schedules
                             SET status = 'Deactivated'
                             WHERE bfm_equipment_no = %s AND status = 'Scheduled'
-                        ''', (bfm_no,))
+                        ''', (new_bfm_no,))
 
                     elif not deactivated_var.get() and current_status == 'Deactivated':
                         # Remove from Deactivated table
-                        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (new_bfm_no,))
 
                 # Show appropriate success message
                 if run_to_failure_var.get():
-                    success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus changed to: Run to Failure\n"
+                    success_msg = f"Equipment {new_bfm_no} updated successfully!\n\nStatus changed to: Run to Failure\n"
                     success_msg += "- All PM requirements disabled\n"
                     success_msg += "- Equipment moved to Run to Failure tab\n"
                     success_msg += "- No future PMs will be scheduled"
                 elif cannot_find_var.get():
-                    success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus changed to: Cannot Find\n"
+                    success_msg = f"Equipment {new_bfm_no} updated successfully!\n\nStatus changed to: Cannot Find\n"
                     success_msg += f"- Reported by: {technician}\n"
                     success_msg += "- Equipment moved to Cannot Find tab\n"
                     success_msg += "- All PM requirements disabled\n"
                     success_msg += "- No future PMs will be scheduled"
                 elif deactivated_var.get():
-                    success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus changed to: Deactivated\n"
+                    success_msg = f"Equipment {new_bfm_no} updated successfully!\n\nStatus changed to: Deactivated\n"
                     success_msg += f"- Deactivated by: {deact_technician}\n"
                     if deact_reason:
                         success_msg += f"- Reason: {deact_reason}\n"
@@ -20078,7 +20125,11 @@ class AITCMMSSystem:
                     success_msg += "- All PM requirements disabled\n"
                     success_msg += "- No future PMs will be scheduled"
                 else:
-                    success_msg = f"Equipment {bfm_no} updated successfully!\n\nStatus: Active"
+                    success_msg = f"Equipment {new_bfm_no} updated successfully!\n\nStatus: Active"
+
+                # Add note if BFM number was changed
+                if bfm_changed:
+                    success_msg += f"\n\nBFM number changed from {bfm_no} to {new_bfm_no}"
 
                 messagebox.showinfo("Success", success_msg)
                 dialog.destroy()
@@ -20096,13 +20147,13 @@ class AITCMMSSystem:
 
                 # Update status bar
                 if run_to_failure_var.get():
-                    self.update_status(f"Equipment {bfm_no} set to Run to Failure")
+                    self.update_status(f"Equipment {new_bfm_no} set to Run to Failure")
                 elif cannot_find_var.get():
-                    self.update_status(f"Equipment {bfm_no} marked as Cannot Find")
+                    self.update_status(f"Equipment {new_bfm_no} marked as Cannot Find")
                 elif deactivated_var.get():
-                    self.update_status(f"Equipment {bfm_no} marked as Deactivated")
+                    self.update_status(f"Equipment {new_bfm_no} marked as Deactivated")
                 else:
-                    self.update_status(f"Equipment {bfm_no} reactivated")
+                    self.update_status(f"Equipment {new_bfm_no} reactivated")
             
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to update equipment: {str(e)}")
