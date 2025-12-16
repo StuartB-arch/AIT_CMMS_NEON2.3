@@ -19415,10 +19415,10 @@ class AITCMMSSystem:
     
     
     def add_equipment_dialog(self):
-        """Dialog to add new equipment with photo upload"""
+        """Dialog to add new equipment with photo upload and custom PM start date"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add New Equipment")
-        dialog.geometry("600x650")
+        dialog.geometry("600x750")
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -19467,9 +19467,23 @@ class AITCMMSSystem:
         ttk.Checkbutton(pm_frame, text="Six Month PM", variable=six_month_var).pack(anchor='w')
         ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var).pack(anchor='w')
 
+        # First PM Date section
+        date_frame = ttk.LabelFrame(scrollable_frame, text="Maintenance Start Date", padding=10)
+        date_frame.grid(row=len(fields)+1, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
+
+        ttk.Label(date_frame, text="First PM Date:", font=('Arial', 9, 'bold')).grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        first_pm_date_var = tk.StringVar()
+        date_entry = ttk.Entry(date_frame, textvariable=first_pm_date_var, width=20)
+        date_entry.grid(row=0, column=1, sticky='w', padx=5, pady=5)
+
+        ttk.Label(date_frame, text="Format: YYYY-MM-DD (e.g., 2026-05-01)",
+                 font=('Arial', 8), foreground='gray').grid(row=1, column=0, columnspan=2, sticky='w', padx=5)
+        ttk.Label(date_frame, text="Leave blank to start scheduling immediately",
+                 font=('Arial', 8), foreground='gray').grid(row=2, column=0, columnspan=2, sticky='w', padx=5)
+
         # Photo upload section
         photo_frame = ttk.LabelFrame(scrollable_frame, text="Equipment Photos", padding=10)
-        photo_frame.grid(row=len(fields)+1, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
+        photo_frame.grid(row=len(fields)+2, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
 
         picture_1_var = tk.StringVar()
         picture_2_var = tk.StringVar()
@@ -19497,6 +19511,48 @@ class AITCMMSSystem:
 
         def save_equipment():
             try:
+                # Validate and parse First PM Date
+                first_pm_date_str = first_pm_date_var.get().strip()
+                next_weekly = None
+                next_monthly = None
+                next_six_month = None
+                next_annual = None
+
+                if first_pm_date_str:
+                    # Parse date with flexible format handling
+                    parsed_date = None
+                    try:
+                        # Try standard format first (YYYY-MM-DD)
+                        parsed_date = datetime.strptime(first_pm_date_str, '%Y-%m-%d')
+                    except ValueError:
+                        # Try other common formats
+                        formats = ['%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d', '%m-%d-%Y']
+                        for fmt in formats:
+                            try:
+                                parsed_date = datetime.strptime(first_pm_date_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+
+                    if not parsed_date:
+                        messagebox.showerror("Error", "Invalid date format. Please use YYYY-MM-DD (e.g., 2026-05-01)")
+                        return
+
+                    # Calculate next PM dates based on first PM date and selected PM types
+                    base_date_str = parsed_date.strftime('%Y-%m-%d')
+
+                    if weekly_var.get():
+                        next_weekly = (parsed_date + timedelta(days=7)).strftime('%Y-%m-%d')
+
+                    if monthly_var.get():
+                        next_monthly = (parsed_date + timedelta(days=30)).strftime('%Y-%m-%d')
+
+                    if six_month_var.get():
+                        next_six_month = (parsed_date + timedelta(days=180)).strftime('%Y-%m-%d')
+
+                    if annual_var.get():
+                        next_annual = (parsed_date + timedelta(days=365)).strftime('%Y-%m-%d')
+
                 # Read image files as binary data
                 pic1_path = picture_1_var.get()
                 pic2_path = picture_2_var.get()
@@ -19517,8 +19573,9 @@ class AITCMMSSystem:
                         INSERT INTO equipment
                         (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
                          location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
+                         next_weekly_pm, next_monthly_pm, next_six_month_pm, next_annual_pm,
                          picture_1_data, picture_2_data)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         entries["SAP Material No:"].get(),
                         entries["BFM Equipment No:"].get(),
@@ -19530,6 +19587,10 @@ class AITCMMSSystem:
                         monthly_var.get(),
                         six_month_var.get(),
                         annual_var.get(),
+                        next_weekly,
+                        next_monthly,
+                        next_six_month,
+                        next_annual,
                         pic1_data,
                         pic2_data
                     ))
@@ -19541,7 +19602,7 @@ class AITCMMSSystem:
 
         # Buttons
         button_frame = ttk.Frame(scrollable_frame)
-        button_frame.grid(row=len(fields)+2, column=0, columnspan=2, pady=10)
+        button_frame.grid(row=len(fields)+3, column=0, columnspan=2, pady=10)
 
         ttk.Button(button_frame, text="Save", command=save_equipment).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='left', padx=5)
