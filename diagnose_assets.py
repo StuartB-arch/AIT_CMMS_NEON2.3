@@ -42,8 +42,9 @@ def diagnose_assets():
 
         with db_pool.get_cursor(commit=False) as cursor:
             # First, get total count
-            cursor.execute("SELECT COUNT(*) FROM equipment")
-            total_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) as count FROM equipment")
+            result = cursor.fetchone()
+            total_count = result['count']
             print(f"\nTotal assets in equipment table: {total_count}")
 
             # Check each search term
@@ -86,30 +87,35 @@ def diagnose_assets():
 
                     for i, row in enumerate(results, 1):
                         print(f"\nAsset #{i}:")
-                        print(f"  BFM Equipment No:    '{row[0]}'  (type: {type(row[0])}, length: {len(str(row[0])) if row[0] else 0})")
-                        print(f"  SAP Material No:     '{row[1]}'")
-                        print(f"  Description:         '{row[2]}'")
-                        print(f"  Location:            '{row[3]}'")
-                        print(f"  Master LIN:          '{row[4]}'")
-                        print(f"  Status:              '{row[5]}'")
-                        print(f"  PM Types Enabled:    Weekly={row[6]}, Monthly={row[7]}, 6-Month={row[8]}, Annual={row[9]}")
+                        bfm = row['bfm_equipment_no']
+                        sap = row['sap_material_no']
+                        desc = row['description']
+                        loc = row['location']
+                        lin = row['master_lin']
+                        stat = row['status']
+
+                        print(f"  BFM Equipment No:    '{bfm}'  (type: {type(bfm)}, length: {len(str(bfm)) if bfm else 0})")
+                        print(f"  SAP Material No:     '{sap}'")
+                        print(f"  Description:         '{desc}'")
+                        print(f"  Location:            '{loc}'")
+                        print(f"  Master LIN:          '{lin}'")
+                        print(f"  Status:              '{stat}'")
+                        print(f"  PM Types Enabled:    Weekly={row['weekly_pm']}, Monthly={row['monthly_pm']}, 6-Month={row['six_month_pm']}, Annual={row['annual_pm']}")
                         print(f"  Next PM Dates:")
-                        print(f"    Weekly:            {row[10]}")
-                        print(f"    Monthly:           {row[11]}")
-                        print(f"    6-Month:           {row[12]}")
-                        print(f"    Annual:            {row[13]}")
+                        print(f"    Weekly:            {row['next_weekly_pm']}")
+                        print(f"    Monthly:           {row['next_monthly_pm']}")
+                        print(f"    6-Month:           {row['next_six_month_pm']}")
+                        print(f"    Annual:            {row['next_annual_pm']}")
 
                         # Check if asset is in deactivated or cannot_find tables
-                        bfm = row[0]
+                        cursor.execute("SELECT COUNT(*) as count FROM deactivated_assets WHERE bfm_equipment_no = %s", (bfm,))
+                        deact_count = cursor.fetchone()['count']
 
-                        cursor.execute("SELECT COUNT(*) FROM deactivated_assets WHERE bfm_equipment_no = %s", (bfm,))
-                        deact_count = cursor.fetchone()[0]
+                        cursor.execute("SELECT COUNT(*) as count FROM cannot_find_assets WHERE bfm_equipment_no = %s", (bfm,))
+                        cf_count = cursor.fetchone()['count']
 
-                        cursor.execute("SELECT COUNT(*) FROM cannot_find_assets WHERE bfm_equipment_no = %s", (bfm,))
-                        cf_count = cursor.fetchone()[0]
-
-                        cursor.execute("SELECT COUNT(*) FROM run_to_failure_assets WHERE bfm_equipment_no = %s", (bfm,))
-                        rtf_count = cursor.fetchone()[0]
+                        cursor.execute("SELECT COUNT(*) as count FROM run_to_failure_assets WHERE bfm_equipment_no = %s", (bfm,))
+                        rtf_count = cursor.fetchone()['count']
 
                         print(f"\n  Special Status:")
                         if deact_count > 0:
@@ -123,15 +129,15 @@ def diagnose_assets():
                             print(f"    ✓ No special status flags")
 
                         # Check for whitespace issues
-                        if row[0] and (row[0] != row[0].strip()):
+                        if bfm and (bfm != bfm.strip()):
                             print(f"    ⚠ WARNING: BFM number has leading/trailing whitespace!")
 
                 else:
                     print(f"\n✗ NOT FOUND in equipment table")
 
                     # Try exact match on BFM
-                    cursor.execute("SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s", (term,))
-                    exact_count = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) as count FROM equipment WHERE bfm_equipment_no = %s", (term,))
+                    exact_count = cursor.fetchone()['count']
 
                     if exact_count > 0:
                         print(f"  Note: Found {exact_count} exact match(es) for BFM '{term}'")
@@ -142,8 +148,8 @@ def diagnose_assets():
             print('='*100)
 
             # Check for NULL BFM numbers
-            cursor.execute("SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no IS NULL OR bfm_equipment_no = ''")
-            null_bfm_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) as count FROM equipment WHERE bfm_equipment_no IS NULL OR bfm_equipment_no = ''")
+            null_bfm_count = cursor.fetchone()['count']
             if null_bfm_count > 0:
                 print(f"\n⚠ Found {null_bfm_count} assets with NULL or empty BFM Equipment No")
 
@@ -158,8 +164,8 @@ def diagnose_assets():
             duplicates = cursor.fetchall()
             if duplicates:
                 print(f"\n⚠ Found {len(duplicates)} duplicate BFM Equipment Numbers:")
-                for bfm, count in duplicates:
-                    print(f"  '{bfm}' appears {count} times")
+                for row in duplicates:
+                    print(f"  '{row['bfm_equipment_no']}' appears {row['count']} times")
             else:
                 print(f"\n✓ No duplicate BFM numbers found")
 
