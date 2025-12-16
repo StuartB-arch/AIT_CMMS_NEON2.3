@@ -19915,37 +19915,53 @@ class AITCMMSSystem:
                             messagebox.showerror("Error", f"BFM Equipment No '{new_bfm_no}' already exists. Please use a unique BFM number.")
                             return
 
-                        # If BFM changed, update all related tables with foreign keys FIRST
-                        # This must be done before updating the equipment table
-                        # Update cannot_find_assets
-                        cursor.execute('UPDATE cannot_find_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        # To avoid foreign key constraint violations, we need to:
+                        # 1. Save data from foreign key tables
+                        # 2. Delete those records temporarily
+                        # 3. Update equipment table with new BFM
+                        # 4. Re-insert saved data with new BFM
 
-                        # Update deactivated_assets
-                        cursor.execute('UPDATE deactivated_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        # Save and delete from cannot_find_assets
+                        cursor.execute('SELECT * FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        cannot_find_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
 
-                        # Update run_to_failure_assets
-                        cursor.execute('UPDATE run_to_failure_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        # Save and delete from deactivated_assets
+                        cursor.execute('SELECT * FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        deactivated_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
 
-                        # Update PM schedules
-                        cursor.execute('UPDATE weekly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE monthly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE six_month_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE annual_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        # Save and delete from run_to_failure_assets
+                        cursor.execute('SELECT * FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+                        rtf_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
 
-                        # Update PM completions
-                        cursor.execute('UPDATE pm_completions SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        # Save and delete PM schedules
+                        cursor.execute('SELECT * FROM weekly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+                        weekly_pm_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM weekly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
 
-                        # Update corrective maintenance
-                        cursor.execute('UPDATE corrective_maintenance SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
+                        cursor.execute('SELECT * FROM monthly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+                        monthly_pm_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM monthly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        cursor.execute('SELECT * FROM six_month_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+                        six_month_pm_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM six_month_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        cursor.execute('SELECT * FROM annual_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+                        annual_pm_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM annual_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        # Save and delete PM completions
+                        cursor.execute('SELECT * FROM pm_completions WHERE bfm_equipment_no = %s', (bfm_no,))
+                        pm_completions_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM pm_completions WHERE bfm_equipment_no = %s', (bfm_no,))
+
+                        # Save and delete corrective maintenance
+                        cursor.execute('SELECT * FROM corrective_maintenance WHERE bfm_equipment_no = %s', (bfm_no,))
+                        corrective_data = cursor.fetchall()
+                        cursor.execute('DELETE FROM corrective_maintenance WHERE bfm_equipment_no = %s', (bfm_no,))
 
                     # Now update equipment table including photos and BFM number
                     cursor.execute('''
@@ -19980,6 +19996,77 @@ class AITCMMSSystem:
                         pic2_data,
                         bfm_no  # OLD BFM number in WHERE clause
                     ))
+
+                    # Re-insert saved data with new BFM number if BFM was changed
+                    if bfm_changed:
+                        # Re-insert cannot_find_assets data
+                        for row in cannot_find_data:
+                            # Row format: (id, bfm_equipment_no, description, location, technician_name, reported_date, status, notes, created_date, updated_date)
+                            cursor.execute('''
+                                INSERT INTO cannot_find_assets
+                                (bfm_equipment_no, description, location, technician_name, reported_date, status, notes)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ''', (new_bfm_no, row[2], row[3], row[4], row[5], row[6], row[7]))
+
+                        # Re-insert deactivated_assets data
+                        for row in deactivated_data:
+                            # Row format: (id, bfm_equipment_no, description, location, deactivated_by, deactivated_date, technician_name, reason, status, notes, created_date, updated_date)
+                            cursor.execute('''
+                                INSERT INTO deactivated_assets
+                                (bfm_equipment_no, description, location, deactivated_by, deactivated_date, technician_name, reason, status, notes)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ''', (new_bfm_no, row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]))
+
+                        # Re-insert run_to_failure_assets data
+                        for row in rtf_data:
+                            # Row format: (id, bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes, created_date, updated_date)
+                            cursor.execute('''
+                                INSERT INTO run_to_failure_assets
+                                (bfm_equipment_no, description, location, technician_name, completion_date, labor_hours, notes)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ''', (new_bfm_no, row[2], row[3], row[4], row[5], row[6], row[7]))
+
+                        # For PM schedules, completions, and corrective maintenance,
+                        # use a generic approach that works with any column structure
+                        for table, data in [
+                            ('weekly_pm_schedules', weekly_pm_data),
+                            ('monthly_pm_schedules', monthly_pm_data),
+                            ('six_month_pm_schedules', six_month_pm_data),
+                            ('annual_pm_schedules', annual_pm_data),
+                            ('pm_completions', pm_completions_data),
+                            ('corrective_maintenance', corrective_data)
+                        ]:
+                            for row in data:
+                                if len(row) > 0:
+                                    # Get column names for this table
+                                    cursor.execute(f'''
+                                        SELECT column_name
+                                        FROM information_schema.columns
+                                        WHERE table_name = %s
+                                        ORDER BY ordinal_position
+                                    ''', (table,))
+                                    columns = [col[0] for col in cursor.fetchall()]
+
+                                    # Build INSERT statement with all columns except id
+                                    insert_cols = [c for c in columns if c != 'id']
+                                    placeholders = ', '.join(['%s'] * len(insert_cols))
+                                    col_names = ', '.join(insert_cols)
+
+                                    # Build values list, replacing old BFM with new BFM
+                                    values = []
+                                    for i, col in enumerate(columns):
+                                        if col == 'id':
+                                            continue  # Skip id column
+                                        elif col == 'bfm_equipment_no':
+                                            values.append(new_bfm_no)  # Use new BFM
+                                        else:
+                                            # Find corresponding value from row
+                                            values.append(row[i])
+
+                                    cursor.execute(f'''
+                                        INSERT INTO {table} ({col_names})
+                                        VALUES ({placeholders})
+                                    ''', values)
 
                     # Handle Run to Failure status
                     if run_to_failure_var.get() and current_status != 'Run to Failure':
