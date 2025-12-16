@@ -19915,7 +19915,39 @@ class AITCMMSSystem:
                             messagebox.showerror("Error", f"BFM Equipment No '{new_bfm_no}' already exists. Please use a unique BFM number.")
                             return
 
-                    # Update equipment table including photos and BFM number
+                        # If BFM changed, update all related tables with foreign keys FIRST
+                        # This must be done before updating the equipment table
+                        # Update cannot_find_assets
+                        cursor.execute('UPDATE cannot_find_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update deactivated_assets
+                        cursor.execute('UPDATE deactivated_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update run_to_failure_assets
+                        cursor.execute('UPDATE run_to_failure_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update PM schedules
+                        cursor.execute('UPDATE weekly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE monthly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE six_month_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+                        cursor.execute('UPDATE annual_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update PM completions
+                        cursor.execute('UPDATE pm_completions SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                        # Update corrective maintenance
+                        cursor.execute('UPDATE corrective_maintenance SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
+                                     (new_bfm_no, bfm_no))
+
+                    # Now update equipment table including photos and BFM number
                     cursor.execute('''
                         UPDATE equipment
                         SET sap_material_no = %s,
@@ -19948,38 +19980,6 @@ class AITCMMSSystem:
                         pic2_data,
                         bfm_no  # OLD BFM number in WHERE clause
                     ))
-
-                    # If BFM changed, update all related tables with foreign keys
-                    if bfm_changed:
-                        # Update cannot_find_assets
-                        cursor.execute('UPDATE cannot_find_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-
-                        # Update deactivated_assets
-                        cursor.execute('UPDATE deactivated_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-
-                        # Update run_to_failure_assets
-                        cursor.execute('UPDATE run_to_failure_assets SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-
-                        # Update PM schedules
-                        cursor.execute('UPDATE weekly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE monthly_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE six_month_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-                        cursor.execute('UPDATE annual_pm_schedules SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-
-                        # Update PM completions
-                        cursor.execute('UPDATE pm_completions SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
-
-                        # Update corrective maintenance
-                        cursor.execute('UPDATE corrective_maintenance SET bfm_equipment_no = %s WHERE bfm_equipment_no = %s',
-                                     (new_bfm_no, bfm_no))
 
                     # Handle Run to Failure status
                     if run_to_failure_var.get() and current_status != 'Run to Failure':
