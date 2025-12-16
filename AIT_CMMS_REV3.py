@@ -19638,7 +19638,7 @@ class AITCMMSSystem:
         # Create edit dialog with scrollable frame
         dialog = tk.Toplevel(self.root)
         dialog.title("Edit Equipment")
-        dialog.geometry("650x700")  # Made larger for photos
+        dialog.geometry("650x800")  # Made larger for photos and PM date section
         dialog.transient(self.root)
         dialog.grab_set()
 
@@ -19719,6 +19719,59 @@ class AITCMMSSystem:
 
         ttk.Label(photo_frame, text="Leave blank to keep existing photo",
                   font=('Arial', 8), foreground='gray').grid(row=2, column=0, columnspan=2, sticky='w', padx=5)
+
+        current_row += 1
+
+        # First PM Date section
+        date_frame = ttk.LabelFrame(scrollable_frame, text="Maintenance Start Date", padding=10)
+        date_frame.grid(row=current_row, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
+
+        ttk.Label(date_frame, text="First PM Date:", font=('Arial', 9, 'bold')).grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        first_pm_date_var = tk.StringVar()
+
+        # Pre-populate with earliest next PM date if available
+        current_next_dates = []
+        if equipment_data.get('next_weekly_pm'):
+            current_next_dates.append(equipment_data['next_weekly_pm'])
+        if equipment_data.get('next_monthly_pm'):
+            current_next_dates.append(equipment_data['next_monthly_pm'])
+        if equipment_data.get('next_six_month_pm'):
+            current_next_dates.append(equipment_data['next_six_month_pm'])
+        if equipment_data.get('next_annual_pm'):
+            current_next_dates.append(equipment_data['next_annual_pm'])
+
+        # Set the earliest date as default if any exist
+        if current_next_dates:
+            earliest_date = min(current_next_dates)
+            first_pm_date_var.set(earliest_date)
+
+        date_entry = ttk.Entry(date_frame, textvariable=first_pm_date_var, width=20)
+        date_entry.grid(row=0, column=1, sticky='w', padx=5, pady=5)
+
+        ttk.Label(date_frame, text="Format: YYYY-MM-DD (e.g., 2026-05-01)",
+                 font=('Arial', 8), foreground='gray').grid(row=1, column=0, columnspan=2, sticky='w', padx=5)
+        ttk.Label(date_frame, text="This sets when PM scheduling should begin for this asset",
+                 font=('Arial', 8), foreground='gray').grid(row=2, column=0, columnspan=2, sticky='w', padx=5)
+
+        # Display current next PM dates for reference
+        current_dates_text = "Current Next PM Dates: "
+        date_parts = []
+        if equipment_data.get('next_weekly_pm'):
+            date_parts.append(f"Weekly: {equipment_data['next_weekly_pm']}")
+        if equipment_data.get('next_monthly_pm'):
+            date_parts.append(f"Monthly: {equipment_data['next_monthly_pm']}")
+        if equipment_data.get('next_six_month_pm'):
+            date_parts.append(f"6-Month: {equipment_data['next_six_month_pm']}")
+        if equipment_data.get('next_annual_pm'):
+            date_parts.append(f"Annual: {equipment_data['next_annual_pm']}")
+
+        if date_parts:
+            current_dates_text += ", ".join(date_parts)
+        else:
+            current_dates_text += "None set"
+
+        ttk.Label(date_frame, text=current_dates_text,
+                 font=('Arial', 8), foreground='blue').grid(row=3, column=0, columnspan=2, sticky='w', padx=5, pady=5)
 
         current_row += 1
 
@@ -19935,6 +19988,46 @@ class AITCMMSSystem:
         def update_equipment():
             """Update equipment in database with Cannot Find support"""
             try:
+                # Validate and parse First PM Date
+                first_pm_date_str = first_pm_date_var.get().strip()
+                next_weekly = None
+                next_monthly = None
+                next_six_month = None
+                next_annual = None
+
+                if first_pm_date_str:
+                    # Parse date with flexible format handling
+                    parsed_date = None
+                    try:
+                        # Try standard format first (YYYY-MM-DD)
+                        parsed_date = datetime.strptime(first_pm_date_str, '%Y-%m-%d')
+                    except ValueError:
+                        # Try other common formats
+                        formats = ['%m/%d/%Y', '%d/%m/%Y', '%Y/%m/%d', '%m-%d-%Y']
+                        for fmt in formats:
+                            try:
+                                parsed_date = datetime.strptime(first_pm_date_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+
+                    if not parsed_date:
+                        messagebox.showerror("Error", "Invalid date format. Please use YYYY-MM-DD (e.g., 2026-05-01)")
+                        return
+
+                    # Calculate next PM dates based on first PM date and selected PM types
+                    if weekly_var.get():
+                        next_weekly = (parsed_date + timedelta(days=7)).strftime('%Y-%m-%d')
+
+                    if monthly_var.get():
+                        next_monthly = (parsed_date + timedelta(days=30)).strftime('%Y-%m-%d')
+
+                    if six_month_var.get():
+                        next_six_month = (parsed_date + timedelta(days=180)).strftime('%Y-%m-%d')
+
+                    if annual_var.get():
+                        next_annual = (parsed_date + timedelta(days=365)).strftime('%Y-%m-%d')
+
                 # Determine new status
                 if run_to_failure_var.get():
                     new_status = 'Run to Failure'
@@ -19976,7 +20069,7 @@ class AITCMMSSystem:
                             messagebox.showerror("Error", f"BFM Equipment No '{new_bfm_no}' already exists. Please use a unique BFM number.")
                             return
 
-                    # Update equipment table including photos and BFM number
+                    # Update equipment table including photos, BFM number, and next PM dates
                     cursor.execute('''
                         UPDATE equipment
                         SET sap_material_no = %s,
@@ -19989,6 +20082,10 @@ class AITCMMSSystem:
                             monthly_pm = %s,
                             six_month_pm = %s,
                             annual_pm = %s,
+                            next_weekly_pm = %s,
+                            next_monthly_pm = %s,
+                            next_six_month_pm = %s,
+                            next_annual_pm = %s,
                             status = %s,
                             picture_1_data = %s,
                             picture_2_data = %s
@@ -20004,6 +20101,10 @@ class AITCMMSSystem:
                         monthly_var.get(),
                         six_month_var.get(),
                         annual_var.get(),
+                        next_weekly,
+                        next_monthly,
+                        next_six_month,
+                        next_annual,
                         new_status,
                         pic1_data,
                         pic2_data,
