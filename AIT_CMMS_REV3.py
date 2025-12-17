@@ -11213,11 +11213,13 @@ class AITCMMSSystem:
         
         ttk.Button(controls_frame, text="Import Equipment CSV", 
                   command=self.import_equipment_csv).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Add Equipment", 
+        ttk.Button(controls_frame, text="Add Equipment",
                   command=self.add_equipment_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Edit Equipment", 
+        ttk.Button(controls_frame, text="Edit Equipment",
                   command=self.edit_equipment_dialog).pack(side='left', padx=5)
-        ttk.Button(controls_frame, text="Refresh List", 
+        ttk.Button(controls_frame, text="Delete Equipment",
+                  command=self.delete_equipment_dialog).pack(side='left', padx=5)
+        ttk.Button(controls_frame, text="Refresh List",
                   command=self.refresh_equipment_list).pack(side='left', padx=5)
         ttk.Button(controls_frame, text="Export Equipment", 
                   command=self.export_equipment_list).pack(side='left', padx=5)
@@ -19411,9 +19413,105 @@ class AITCMMSSystem:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
             return
-    
-    
-    
+
+    def delete_equipment_dialog(self):
+        """Delete selected equipment from database"""
+        selected = self.equipment_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select equipment to delete")
+            return
+
+        # Support multiple selection
+        if len(selected) > 1:
+            # Multiple assets selected
+            count = len(selected)
+            response = messagebox.askyesno(
+                "Confirm Delete",
+                f"Are you sure you want to delete {count} selected assets?\n\n"
+                f"This will permanently remove them and all their associated records:\n"
+                f"• PM schedules\n"
+                f"• PM completions\n"
+                f"• Corrective maintenance records\n\n"
+                f"This action CANNOT be undone!",
+                icon='warning'
+            )
+            if not response:
+                return
+
+            # Get all BFM numbers
+            bfm_numbers = []
+            for item in selected:
+                item_data = self.equipment_tree.item(item)
+                bfm_no = str(item_data['values'][1]).strip()
+                bfm_numbers.append(bfm_no)
+
+            # Delete all selected
+            try:
+                with db_pool.get_cursor(commit=True) as cursor:
+                    for bfm_no in bfm_numbers:
+                        self._delete_single_equipment(cursor, bfm_no)
+
+                messagebox.showinfo("Success", f"Successfully deleted {count} assets!")
+                self.refresh_equipment_list()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete assets: {str(e)}")
+
+        else:
+            # Single asset selected
+            item = self.equipment_tree.item(selected[0])
+            bfm_no = str(item['values'][1]).strip()
+            description = str(item['values'][2])
+
+            # Confirm deletion
+            response = messagebox.askyesno(
+                "Confirm Delete",
+                f"Are you sure you want to delete this asset?\n\n"
+                f"BFM Equipment No: {bfm_no}\n"
+                f"Description: {description}\n\n"
+                f"This will permanently remove:\n"
+                f"• The equipment record\n"
+                f"• All PM schedules\n"
+                f"• All PM completions\n"
+                f"• All corrective maintenance records\n\n"
+                f"This action CANNOT be undone!",
+                icon='warning'
+            )
+
+            if not response:
+                return
+
+            # Delete the asset
+            try:
+                with db_pool.get_cursor(commit=True) as cursor:
+                    self._delete_single_equipment(cursor, bfm_no)
+
+                messagebox.showinfo("Success", f"Equipment {bfm_no} deleted successfully!")
+                self.refresh_equipment_list()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete equipment: {str(e)}")
+
+    def _delete_single_equipment(self, cursor, bfm_no):
+        """Helper function to delete a single equipment and all related records"""
+        # Delete from all related tables first (foreign key constraints)
+
+        # Delete PM schedules
+        cursor.execute('DELETE FROM weekly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+
+        # Delete PM completions
+        cursor.execute('DELETE FROM pm_completions WHERE bfm_equipment_no = %s', (bfm_no,))
+
+        # Delete from corrective maintenance
+        cursor.execute('DELETE FROM corrective_maintenance WHERE bfm_equipment_no = %s', (bfm_no,))
+
+        # Delete from special status tables
+        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+
+        # Finally delete from equipment table
+        cursor.execute('DELETE FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+
+
     def add_equipment_dialog(self):
         """Dialog to add new equipment with photo upload and custom PM start date"""
         dialog = tk.Toplevel(self.root)
