@@ -19493,52 +19493,53 @@ class AITCMMSSystem:
     def _delete_single_equipment(self, cursor, bfm_no):
         """Helper function to delete a single equipment and all related records"""
         # Delete from all related tables first (foreign key constraints)
-        # Use TRIM() to match BFM numbers even if they have whitespace/newlines
+        # Use BTRIM() with newline chars - TRIM() only removes spaces, not \n!
+        # E' \\n\\r\\t' removes newlines, carriage returns, tabs, and spaces
 
         total_deleted = 0
 
         # Delete PM schedules
-        cursor.execute('DELETE FROM weekly_pm_schedules WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM weekly_pm_schedules WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} PM schedule(s)")
             total_deleted += rows
 
         # Delete PM completions
-        cursor.execute('DELETE FROM pm_completions WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM pm_completions WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} PM completion(s)")
             total_deleted += rows
 
         # Delete from corrective maintenance
-        cursor.execute('DELETE FROM corrective_maintenance WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM corrective_maintenance WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} CM record(s)")
             total_deleted += rows
 
         # Delete from special status tables
-        cursor.execute('DELETE FROM cannot_find_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM cannot_find_assets WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} cannot find record(s)")
             total_deleted += rows
 
-        cursor.execute('DELETE FROM run_to_failure_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM run_to_failure_assets WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} run to failure record(s)")
             total_deleted += rows
 
-        cursor.execute('DELETE FROM deactivated_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM deactivated_assets WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         rows = cursor.rowcount
         if rows > 0:
             print(f"  Deleted {rows} deactivated record(s)")
             total_deleted += rows
 
         # Finally delete from equipment table
-        cursor.execute('DELETE FROM equipment WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute("DELETE FROM equipment WHERE BTRIM(bfm_equipment_no, E' \\n\\r\\t') = %s", (bfm_no,))
         equipment_rows = cursor.rowcount
 
         # Log the deletion with details
