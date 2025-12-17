@@ -19493,23 +19493,27 @@ class AITCMMSSystem:
     def _delete_single_equipment(self, cursor, bfm_no):
         """Helper function to delete a single equipment and all related records"""
         # Delete from all related tables first (foreign key constraints)
+        # Use TRIM() to match BFM numbers even if they have whitespace/newlines
 
         # Delete PM schedules
-        cursor.execute('DELETE FROM weekly_pm_schedules WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM weekly_pm_schedules WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
 
         # Delete PM completions
-        cursor.execute('DELETE FROM pm_completions WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM pm_completions WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
 
         # Delete from corrective maintenance
-        cursor.execute('DELETE FROM corrective_maintenance WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM corrective_maintenance WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
 
         # Delete from special status tables
-        cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-        cursor.execute('DELETE FROM run_to_failure_assets WHERE bfm_equipment_no = %s', (bfm_no,))
-        cursor.execute('DELETE FROM deactivated_assets WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM cannot_find_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute('DELETE FROM run_to_failure_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        cursor.execute('DELETE FROM deactivated_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
 
         # Finally delete from equipment table
-        cursor.execute('DELETE FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+        cursor.execute('DELETE FROM equipment WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+
+        # Log the deletion
+        print(f"Deleted equipment with BFM: {bfm_no}")
 
 
     def add_equipment_dialog(self):
