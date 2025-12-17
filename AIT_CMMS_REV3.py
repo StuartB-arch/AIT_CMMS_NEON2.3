@@ -19495,25 +19495,68 @@ class AITCMMSSystem:
         # Delete from all related tables first (foreign key constraints)
         # Use TRIM() to match BFM numbers even if they have whitespace/newlines
 
+        total_deleted = 0
+
         # Delete PM schedules
         cursor.execute('DELETE FROM weekly_pm_schedules WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} PM schedule(s)")
+            total_deleted += rows
 
         # Delete PM completions
         cursor.execute('DELETE FROM pm_completions WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} PM completion(s)")
+            total_deleted += rows
 
         # Delete from corrective maintenance
         cursor.execute('DELETE FROM corrective_maintenance WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} CM record(s)")
+            total_deleted += rows
 
         # Delete from special status tables
         cursor.execute('DELETE FROM cannot_find_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} cannot find record(s)")
+            total_deleted += rows
+
         cursor.execute('DELETE FROM run_to_failure_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} run to failure record(s)")
+            total_deleted += rows
+
         cursor.execute('DELETE FROM deactivated_assets WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        rows = cursor.rowcount
+        if rows > 0:
+            print(f"  Deleted {rows} deactivated record(s)")
+            total_deleted += rows
 
         # Finally delete from equipment table
         cursor.execute('DELETE FROM equipment WHERE TRIM(bfm_equipment_no) = %s', (bfm_no,))
+        equipment_rows = cursor.rowcount
 
-        # Log the deletion
+        # Log the deletion with details
         print(f"Deleted equipment with BFM: {bfm_no}")
+        print(f"  Equipment records deleted: {equipment_rows}")
+        print(f"  Total related records deleted: {total_deleted}")
+
+        if equipment_rows == 0:
+            print(f"  ⚠ WARNING: No equipment record was deleted! BFM may not exist or have different whitespace.")
+            # Try to find what's in the database
+            cursor.execute("SELECT bfm_equipment_no FROM equipment WHERE bfm_equipment_no LIKE %s LIMIT 5", (f'%{bfm_no}%',))
+            similar = cursor.fetchall()
+            if similar:
+                print(f"  Similar BFM numbers found in database:")
+                for row in similar:
+                    print(f"    - '{row['bfm_equipment_no']}' (repr: {repr(row['bfm_equipment_no'])})")
+
+        return equipment_rows
 
 
     def add_equipment_dialog(self):
