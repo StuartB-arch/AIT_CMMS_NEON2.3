@@ -1,0 +1,6 @@
+SAP number,BFM number,Description,Reason
+12345678,BFM-001,Test Equipment 1,End of life
+23456789,BFM-002,Test Equipment 2,Replaced by new model
+34567890,BFM-003,Test Equipment 3,No longer needed
+45678901,BFM-004,Test Equipment 4,Maintenance costs too high
+56789012,BFM-005,Test Equipment 5,Obsolete technology

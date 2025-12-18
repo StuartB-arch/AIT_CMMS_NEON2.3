@@ -12906,6 +12906,8 @@ class AITCMMSSystem:
         controls_frame = ttk.LabelFrame(self.deactivated_frame, text="Deactivated Asset Controls", padding=10)
         controls_frame.pack(fill='x', padx=10, pady=5)
 
+        ttk.Button(controls_frame, text="Import CSV",
+                command=self.import_deactivated_csv).pack(side='left', padx=5)
         ttk.Button(controls_frame, text="Refresh List",
                 command=self.load_deactivated_assets).pack(side='left', padx=5)
         ttk.Button(controls_frame, text="Export to PDF",
@@ -15076,6 +15078,240 @@ class AITCMMSSystem:
             print(f"Error loading deactivated assets: {e}")
 
 
+    def import_deactivated_csv(self):
+        """Import deactivated assets from CSV file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Deactivated Assets CSV File",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+
+        if file_path:
+            try:
+                # Show column mapping dialog first
+                self.show_deactivated_csv_mapping_dialog(file_path)
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import CSV file: {str(e)}")
+
+
+    def show_deactivated_csv_mapping_dialog(self, file_path):
+        """Show dialog to map CSV columns to deactivated assets database fields"""
+
+        try:
+            # Read CSV to get column headers
+            df = pd.read_csv(file_path, encoding='cp1252', nrows=5)  # Just read first 5 rows to see structure
+            csv_columns = list(df.columns)
+
+            dialog = tk.Toplevel(self.root)
+            dialog.title("Map CSV Columns to Deactivated Assets Fields")
+            dialog.geometry("700x600")
+            dialog.transient(self.root)
+            dialog.grab_set()
+
+            # Main container with scrollbar
+            main_canvas = tk.Canvas(dialog)
+            scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=main_canvas.yview)
+            scrollable_frame = ttk.Frame(main_canvas)
+
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+            )
+
+            main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            main_canvas.configure(yscrollcommand=scrollbar.set)
+
+            # Instructions
+            ttk.Label(scrollable_frame, text="Map your CSV columns to the correct database fields:",
+                    font=('Arial', 12, 'bold')).pack(pady=10)
+
+            # Create mapping frame
+            mapping_frame = ttk.Frame(scrollable_frame)
+            mapping_frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+            # Column mappings
+            mappings = {}
+
+            # Database fields that can be mapped for deactivated assets
+            db_fields = [
+                ("SAP Material No", "sap_material_no"),
+                ("BFM Equipment No (Required)", "bfm_equipment_no"),
+                ("Description", "description"),
+                ("Reason for Deactivation", "reason")
+            ]
+
+            # Add "None" option to CSV columns
+            csv_options = ["(Not in CSV)"] + csv_columns
+
+            row = 0
+            for field_name, field_key in db_fields:
+                ttk.Label(mapping_frame, text=field_name + ":").grid(row=row, column=0, sticky='w', pady=2)
+
+                mapping_var = tk.StringVar()
+                combo = ttk.Combobox(mapping_frame, textvariable=mapping_var, values=csv_options, width=30)
+                combo.grid(row=row, column=1, padx=10, pady=2)
+
+                # Try to auto-match common column names
+                for csv_col in csv_columns:
+                    csv_lower = csv_col.lower()
+                    if field_key == 'sap_material_no' and 'sap' in csv_lower:
+                        mapping_var.set(csv_col)
+                        break
+                    elif field_key == 'bfm_equipment_no' and 'bfm' in csv_lower:
+                        mapping_var.set(csv_col)
+                        break
+                    elif field_key == 'description' and 'description' in csv_lower:
+                        mapping_var.set(csv_col)
+                        break
+                    elif field_key == 'reason' and 'reason' in csv_lower:
+                        mapping_var.set(csv_col)
+                        break
+
+                mappings[field_key] = mapping_var
+                row += 1
+
+            # Show sample data
+            sample_frame = ttk.LabelFrame(scrollable_frame, text="Sample Data from Your CSV", padding=10)
+            sample_frame.pack(fill='x', padx=20, pady=10)
+
+            sample_text = tk.Text(sample_frame, height=6, width=80)
+            sample_text.pack()
+            sample_text.insert('1.0', df.to_string())
+            sample_text.config(state='disabled')
+
+            def process_import():
+                """Process the import with mapped columns"""
+                try:
+                    # Get the full CSV data
+                    full_df = pd.read_csv(file_path, encoding='cp1252')
+                    full_df.columns = full_df.columns.str.strip()  # Strip whitespace from column names
+
+                    cursor = self.conn.cursor()
+                    imported_count = 0
+                    error_count = 0
+                    current_date = datetime.now().strftime('%Y-%m-%d')
+
+                    for index, row in full_df.iterrows():
+                        try:
+                            # Extract mapped data with whitespace stripping
+                            data = {}
+                            for field_key, mapping_var in mappings.items():
+                                csv_column = mapping_var.get()
+                                if csv_column != "(Not in CSV)" and csv_column in full_df.columns:
+                                    value = row[csv_column]
+                                    if pd.isna(value):
+                                        data[field_key] = None
+                                    else:
+                                        # Strip whitespace from all string values
+                                        data[field_key] = str(value).strip()
+                                else:
+                                    data[field_key] = None
+
+                            # Only import if BFM number exists
+                            bfm_no = data.get('bfm_equipment_no')
+                            if bfm_no:
+                                # Ensure BFM number has no whitespace
+                                bfm_no = bfm_no.strip()
+
+                                # First, check if equipment exists in equipment table, if not, create it
+                                cursor.execute('''
+                                    SELECT bfm_equipment_no FROM equipment WHERE TRIM(bfm_equipment_no) = TRIM(%s)
+                                ''', (bfm_no,))
+
+                                equipment_exists = cursor.fetchone()
+
+                                if not equipment_exists:
+                                    # Create the equipment record first
+                                    cursor.execute('''
+                                        INSERT INTO equipment
+                                        (sap_material_no, bfm_equipment_no, description, status)
+                                        VALUES (%s, %s, %s, %s)
+                                        ON CONFLICT (bfm_equipment_no) DO NOTHING
+                                    ''', (
+                                        data.get('sap_material_no'),
+                                        bfm_no,
+                                        data.get('description'),
+                                        'Deactivated'
+                                    ))
+                                else:
+                                    # Update existing equipment status to Deactivated
+                                    cursor.execute('''
+                                        UPDATE equipment
+                                        SET status = 'Deactivated'
+                                        WHERE TRIM(bfm_equipment_no) = TRIM(%s)
+                                    ''', (bfm_no,))
+
+                                # Insert into deactivated_assets table
+                                cursor.execute('''
+                                    INSERT INTO deactivated_assets
+                                    (bfm_equipment_no, description, deactivated_by, deactivated_date,
+                                     reason, status)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    ON CONFLICT (bfm_equipment_no) DO UPDATE SET
+                                        description = EXCLUDED.description,
+                                        deactivated_by = EXCLUDED.deactivated_by,
+                                        deactivated_date = EXCLUDED.deactivated_date,
+                                        reason = EXCLUDED.reason,
+                                        status = EXCLUDED.status
+                                ''', (
+                                    bfm_no,
+                                    data.get('description'),
+                                    self.user_name,
+                                    current_date,
+                                    data.get('reason'),
+                                    'Deactivated'
+                                ))
+                                imported_count += 1
+                            else:
+                                error_count += 1
+
+                        except Exception as e:
+                            print(f"Error importing row {index}: {e}")
+                            error_count += 1
+                            continue
+
+                    self.conn.commit()
+                    dialog.destroy()
+
+                    # Show results
+                    result_msg = f"Import completed!\n\n"
+                    result_msg += f"CHECK: Successfully imported: {imported_count} records\n"
+                    if error_count > 0:
+                        result_msg += f"WARNING: Skipped (errors): {error_count} records\n"
+                    result_msg += f"\nTotal processed: {imported_count + error_count} records"
+
+                    messagebox.showinfo("Import Results", result_msg)
+                    self.load_deactivated_assets()
+                    self.update_equipment_statistics()
+                    self.update_status(f"Imported {imported_count} deactivated asset records")
+
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to process import: {str(e)}")
+
+            def cancel_import():
+                """Cancel the import process"""
+                dialog.destroy()
+
+            # Buttons frame
+            button_frame = ttk.Frame(scrollable_frame)
+            button_frame.pack(side='bottom', fill='x', padx=20, pady=20)
+
+            # Import button
+            import_button = ttk.Button(button_frame, text="Import with These Mappings",
+                                    command=process_import)
+            import_button.pack(side='left', padx=10)
+
+            # Cancel button
+            cancel_button = ttk.Button(button_frame, text="Cancel",
+                                    command=cancel_import)
+            cancel_button.pack(side='right', padx=10)
+
+            # Pack the canvas and scrollbar
+            main_canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read CSV file: {str(e)}")
 
 
     # 8. LOAD RUN TO FAILURE ASSETS
