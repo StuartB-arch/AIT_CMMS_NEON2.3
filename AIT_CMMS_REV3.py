@@ -10099,6 +10099,45 @@ class AITCMMSSystem:
                 ''')
                 print("✓ Created index: idx_cm_completion_date")
 
+            # === Weekly PM Schedules Table Indexes ===
+            # PERFORMANCE OPTIMIZATION: Support technician schedule queries (fix N+1 pattern)
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_weekly_pm_technician_week
+                ON weekly_pm_schedules(assigned_technician, week_start_date)
+            ''')
+            print("✓ Created index: idx_weekly_pm_technician_week")
+
+            # PERFORMANCE OPTIMIZATION: Support week selector dropdown
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_weekly_pm_week_start_desc
+                ON weekly_pm_schedules(week_start_date DESC)
+            ''')
+            print("✓ Created index: idx_weekly_pm_week_start_desc")
+
+            # === Cannot Find Assets Table Indexes ===
+            # PERFORMANCE OPTIMIZATION: Support equipment filtering with exclusions
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cannot_find_status_bfm
+                ON cannot_find_assets(status, bfm_equipment_no)
+            ''')
+            print("✓ Created index: idx_cannot_find_status_bfm")
+
+            # === Deactivated Assets Table Indexes ===
+            # PERFORMANCE OPTIMIZATION: Support equipment filtering with exclusions
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_deactivated_status_bfm
+                ON deactivated_assets(status, bfm_equipment_no)
+            ''')
+            print("✓ Created index: idx_deactivated_status_bfm")
+
+            # === PM Completions Table Indexes ===
+            # PERFORMANCE OPTIMIZATION: Support load_recent_completions with DESC order
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_pm_completions_date_desc
+                ON pm_completions(completion_date DESC, id DESC)
+            ''')
+            print("✓ Created index: idx_pm_completions_date_desc")
+
             print("=" * 60)
             print("✓ All performance indexes created successfully!")
             print("=" * 60)
@@ -11333,13 +11372,15 @@ class AITCMMSSystem:
     
     
     def populate_week_selector(self):
-        """Populate dropdown with weeks that have schedules"""
+        """Populate dropdown with weeks that have schedules - OPTIMIZED: Limit to last 52 weeks"""
         try:
             cursor = self.conn.cursor()
+            # PERFORMANCE OPTIMIZATION: Limit to last 52 weeks (1 year) to prevent memory bloat
             cursor.execute('''
-                SELECT DISTINCT week_start_date 
-                FROM weekly_pm_schedules 
+                SELECT DISTINCT week_start_date
+                FROM weekly_pm_schedules
                 ORDER BY week_start_date DESC
+                LIMIT 52
             ''')
             available_weeks = [row[0] for row in cursor.fetchall()]
         
@@ -11387,87 +11428,62 @@ class AITCMMSSystem:
     
     
     def update_equipment_statistics(self):
-        """Update equipment statistics display"""
+        """Update equipment statistics display - OPTIMIZED: Single query instead of 7"""
         try:
             cursor = self.conn.cursor()
 
-            # Get total assets count
-            cursor.execute('SELECT COUNT(*) FROM equipment')
-            total_assets = cursor.fetchone()[0]
+            # PERFORMANCE OPTIMIZATION: Combine 7 separate queries into 1 query
+            # Uses LEFT JOINs and CASE statements to calculate all statistics in one go
+            cursor.execute('''
+                SELECT
+                    COUNT(DISTINCT e.bfm_equipment_no) as total_assets,
+                    COUNT(DISTINCT CASE WHEN c.bfm_equipment_no IS NOT NULL THEN e.bfm_equipment_no END) as cannot_find_count,
+                    COUNT(DISTINCT CASE WHEN d.bfm_equipment_no IS NOT NULL THEN e.bfm_equipment_no END) as deactivated_count,
+                    COUNT(DISTINCT CASE
+                        WHEN e.monthly_pm = TRUE
+                        AND c.bfm_equipment_no IS NULL
+                        AND d.bfm_equipment_no IS NULL
+                        THEN e.bfm_equipment_no
+                    END) as monthly_equipment_count,
+                    COUNT(DISTINCT CASE
+                        WHEN e.six_month_pm = TRUE
+                        AND c.bfm_equipment_no IS NULL
+                        AND d.bfm_equipment_no IS NULL
+                        THEN e.bfm_equipment_no
+                    END) as six_month_equipment_count,
+                    COUNT(DISTINCT CASE
+                        WHEN e.annual_pm = TRUE
+                        AND c.bfm_equipment_no IS NULL
+                        AND d.bfm_equipment_no IS NULL
+                        THEN e.bfm_equipment_no
+                    END) as annual_equipment_count,
+                    COUNT(DISTINCT CASE
+                        WHEN e.weekly_pm = TRUE
+                        AND c.bfm_equipment_no IS NULL
+                        AND d.bfm_equipment_no IS NULL
+                        THEN e.bfm_equipment_no
+                    END) as weekly_equipment_count
+                FROM equipment e
+                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
+                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
+            ''')
 
-            # Get Cannot Find count from cannot_find_assets table
-            cursor.execute('SELECT COUNT(DISTINCT bfm_equipment_no) FROM cannot_find_assets WHERE status = %s', ('Missing',))
-            cannot_find_count = cursor.fetchone()[0]
-
-            # Get Deactivated count from deactivated_assets table
-            cursor.execute('SELECT COUNT(DISTINCT bfm_equipment_no) FROM deactivated_assets WHERE status = %s', ('Deactivated',))
-            deactivated_count = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            total_assets = result[0] or 0
+            cannot_find_count = result[1] or 0
+            deactivated_count = result[2] or 0
+            monthly_equipment_count = result[3] or 0
+            six_month_equipment_count = result[4] or 0
+            annual_equipment_count = result[5] or 0
+            weekly_equipment_count = result[6] or 0
 
             # Active assets = Total - Cannot Find - Deactivated
-            # This ensures the numbers add up correctly
             active_assets = total_assets - cannot_find_count - deactivated_count
 
-            # Get PM counts for active assets only (excluding Cannot Find and Deactivated)
-            # Calculate ANNUAL PM WORKLOAD (total PMs per year, not just equipment count)
-
-            # Monthly PM count - multiply by 12 (12 times per year)
-            cursor.execute('''
-                SELECT COUNT(*) FROM equipment e
-                WHERE e.monthly_pm = TRUE
-                AND e.status != %s
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
-                )
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
-                )
-            ''', ('Deactivated', 'Missing', 'Deactivated'))
-            monthly_equipment_count = cursor.fetchone()[0]
+            # Calculate ANNUAL PM WORKLOAD (total PMs per year)
             monthly_pm_count = monthly_equipment_count * 12  # 12 monthly PMs per year per asset
-
-            # 6-Month PM count - multiply by 2 (2 times per year)
-            cursor.execute('''
-                SELECT COUNT(*) FROM equipment e
-                WHERE e.six_month_pm = TRUE
-                AND e.status != %s
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
-                )
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
-                )
-            ''', ('Deactivated', 'Missing', 'Deactivated'))
-            six_month_equipment_count = cursor.fetchone()[0]
             six_month_pm_count = six_month_equipment_count * 2  # 2 six-month PMs per year per asset
-
-            # Annual PM count - multiply by 1 (1 time per year)
-            cursor.execute('''
-                SELECT COUNT(*) FROM equipment e
-                WHERE e.annual_pm = TRUE
-                AND e.status != %s
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
-                )
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
-                )
-            ''', ('Deactivated', 'Missing', 'Deactivated'))
-            annual_equipment_count = cursor.fetchone()[0]
             annual_pm_count = annual_equipment_count * 1  # 1 annual PM per year per asset
-
-            # Weekly PM count - multiply by 52 (52 times per year)
-            cursor.execute('''
-                SELECT COUNT(*) FROM equipment e
-                WHERE e.weekly_pm = TRUE
-                AND e.status != %s
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = %s
-                )
-                AND e.bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = %s
-                )
-            ''', ('Deactivated', 'Missing', 'Deactivated'))
-            weekly_equipment_count = cursor.fetchone()[0]
             weekly_pm_count = weekly_equipment_count * 52  # 52 weekly PMs per year per asset
 
             # Update labels - show annual PM workload
@@ -20983,59 +20999,87 @@ class AITCMMSSystem:
 
             cursor = self.conn.cursor()
 
-            # Build SQL query with filters - OPTIMIZED: Only select columns needed for display
+            # Build SQL query with filters - OPTIMIZED: Use LEFT JOIN instead of NOT IN subqueries
             query = '''
-                SELECT sap_material_no, bfm_equipment_no, description, location, master_lin,
-                       monthly_pm, six_month_pm, annual_pm, status
-                FROM equipment
-                WHERE 1=1
-                AND bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM deactivated_assets WHERE status = 'Deactivated'
-                )
-                AND bfm_equipment_no NOT IN (
-                    SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = 'Missing'
-                )
+                SELECT e.sap_material_no, e.bfm_equipment_no, e.description, e.location, e.master_lin,
+                       e.monthly_pm, e.six_month_pm, e.annual_pm, e.status
+                FROM equipment e
+                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
+                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
+                WHERE d.bfm_equipment_no IS NULL
+                AND c.bfm_equipment_no IS NULL
             '''
             params = []
 
             # Location filter
             if selected_location != "All Locations":
-                query += " AND location = %s"
+                query += " AND e.location = %s"
                 params.append(selected_location)
 
             # PM cycle filters (OR logic - equipment must have at least one selected PM type)
             if monthly_filter or six_month_filter or annual_filter:
                 pm_conditions = []
                 if monthly_filter:
-                    pm_conditions.append("monthly_pm = TRUE")
+                    pm_conditions.append("e.monthly_pm = TRUE")
                 if six_month_filter:
-                    pm_conditions.append("six_month_pm = TRUE")
+                    pm_conditions.append("e.six_month_pm = TRUE")
                 if annual_filter:
-                    pm_conditions.append("annual_pm = TRUE")
+                    pm_conditions.append("e.annual_pm = TRUE")
                 query += f" AND ({' OR '.join(pm_conditions)})"
 
             # Search term filter - use LOWER() for case-insensitive search
             if search_term:
                 query += ''' AND (
-                    LOWER(sap_material_no) LIKE LOWER(%s) OR
-                    LOWER(bfm_equipment_no) LIKE LOWER(%s) OR
-                    LOWER(description) LIKE LOWER(%s) OR
-                    LOWER(location) LIKE LOWER(%s) OR
-                    LOWER(master_lin) LIKE LOWER(%s)
+                    LOWER(e.sap_material_no) LIKE LOWER(%s) OR
+                    LOWER(e.bfm_equipment_no) LIKE LOWER(%s) OR
+                    LOWER(e.description) LIKE LOWER(%s) OR
+                    LOWER(e.location) LIKE LOWER(%s) OR
+                    LOWER(e.master_lin) LIKE LOWER(%s)
                 )'''
                 search_param = f'%{search_term}%'
                 params.extend([search_param] * 5)
 
             # Get total count for pagination (only on reset/filter change)
             if reset or self.equip_total_count == 0:
-                # Extract WHERE clause for count query
-                where_clause = query.split('WHERE 1=1', 1)[1] if 'WHERE 1=1' in query else ''
-                count_query = f"SELECT COUNT(*) FROM equipment WHERE 1=1{where_clause}"
-                cursor.execute(count_query, params)
+                # Build count query with same JOINs and WHERE clause
+                count_query = '''
+                    SELECT COUNT(DISTINCT e.bfm_equipment_no)
+                    FROM equipment e
+                    LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
+                    LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
+                    WHERE d.bfm_equipment_no IS NULL
+                    AND c.bfm_equipment_no IS NULL
+                '''
+                # Add same filters as main query
+                count_params = []
+                if selected_location != "All Locations":
+                    count_query += " AND e.location = %s"
+                    count_params.append(selected_location)
+                if monthly_filter or six_month_filter or annual_filter:
+                    pm_conditions = []
+                    if monthly_filter:
+                        pm_conditions.append("e.monthly_pm = TRUE")
+                    if six_month_filter:
+                        pm_conditions.append("e.six_month_pm = TRUE")
+                    if annual_filter:
+                        pm_conditions.append("e.annual_pm = TRUE")
+                    count_query += f" AND ({' OR '.join(pm_conditions)})"
+                if search_term:
+                    count_query += ''' AND (
+                        LOWER(e.sap_material_no) LIKE LOWER(%s) OR
+                        LOWER(e.bfm_equipment_no) LIKE LOWER(%s) OR
+                        LOWER(e.description) LIKE LOWER(%s) OR
+                        LOWER(e.location) LIKE LOWER(%s) OR
+                        LOWER(e.master_lin) LIKE LOWER(%s)
+                    )'''
+                    search_param = f'%{search_term}%'
+                    count_params.extend([search_param] * 5)
+
+                cursor.execute(count_query, count_params)
                 self.equip_total_count = cursor.fetchone()[0]
 
             # Add pagination
-            query += f" ORDER BY bfm_equipment_no LIMIT {self.equip_page_size} OFFSET {self.equip_offset}"
+            query += f" ORDER BY e.bfm_equipment_no LIMIT {self.equip_page_size} OFFSET {self.equip_offset}"
 
             # Execute optimized query
             cursor.execute(query, params)
@@ -21668,36 +21712,42 @@ class AITCMMSSystem:
 
 
     def refresh_technician_schedules(self):
-        """Refresh all technician schedule displays"""
+        """Refresh all technician schedule displays - OPTIMIZED: Single query instead of N queries"""
         week_start = self.week_start_var.get()
 
+        # Clear all existing items first
         for technician, tree in self.technician_trees.items():
-            # Clear existing items
             for item in tree.get_children():
                 tree.delete(item)
 
-            # Load scheduled PMs for this technician
-            cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT ws.bfm_equipment_no, e.description, ws.pm_type, ws.scheduled_date, ws.status
-                FROM weekly_pm_schedules ws
-                JOIN equipment e ON ws.bfm_equipment_no = e.bfm_equipment_no
-                WHERE ws.assigned_technician = %s AND ws.week_start_date = %s
-                ORDER BY ws.scheduled_date
-            ''', (technician, week_start))
+        # PERFORMANCE OPTIMIZATION: Fetch all schedules in ONE query instead of N separate queries
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT ws.bfm_equipment_no, e.description, ws.pm_type, ws.scheduled_date,
+                   ws.status, ws.assigned_technician
+            FROM weekly_pm_schedules ws
+            JOIN equipment e ON ws.bfm_equipment_no = e.bfm_equipment_no
+            WHERE ws.week_start_date = %s
+            ORDER BY ws.assigned_technician, ws.scheduled_date
+        ''', (week_start,))
 
-            assignments = cursor.fetchall()
+        all_assignments = cursor.fetchall()
 
-            for idx, assignment in enumerate(assignments):
-                bfm_no, description, pm_type, scheduled_date, status = assignment
+        # Group assignments by technician and populate trees
+        for idx, assignment in enumerate(all_assignments):
+            bfm_no, description, pm_type, scheduled_date, status, technician = assignment
+
+            # Only add to tree if technician exists in our trees dict
+            if technician in self.technician_trees:
+                tree = self.technician_trees[technician]
                 tree.insert('', 'end', values=(bfm_no, description, pm_type, scheduled_date, status))
 
-                # Yield to event loop every 20 items to keep UI responsive
-                if idx % 20 == 0:
-                    self.root.update_idletasks()
+            # Yield to event loop every 20 items to keep UI responsive
+            if idx % 20 == 0:
+                self.root.update_idletasks()
 
-            # Yield to event loop after each technician
-            self.root.update_idletasks()
+        # Final yield to event loop
+        self.root.update_idletasks()
 
     def mark_pm_cannot_find(self):
         """Mark a selected PM as Cannot Find from the scheduling tab"""
