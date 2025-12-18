@@ -12915,6 +12915,17 @@ class AITCMMSSystem:
         ttk.Button(controls_frame, text="Reactivate Asset",
                 command=self.reactivate_deactivated_asset).pack(side='left', padx=5)
 
+        # Search frame
+        search_frame = ttk.Frame(self.deactivated_frame)
+        search_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Label(search_frame, text="Search (BFM/SAP/Description):").pack(side='left', padx=5)
+        self.deactivated_search_var = tk.StringVar()
+        self.deactivated_search_entry = ttk.Entry(search_frame, textvariable=self.deactivated_search_var, width=40)
+        self.deactivated_search_entry.pack(side='left', padx=5)
+        # Bind KeyRelease event to trigger filtering as user types
+        self.deactivated_search_entry.bind('<KeyRelease>', self.filter_deactivated_list)
+
         # Deactivated assets list
         list_frame = ttk.LabelFrame(self.deactivated_frame, text="Deactivated Assets", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
@@ -15041,25 +15052,43 @@ class AITCMMSSystem:
             else:
                 self.update_status(f"Showing {total_count} Cannot Find assets")
 
-    def load_deactivated_assets(self):
-        """Load deactivated assets data"""
+    def load_deactivated_assets(self, search_term=None):
+        """Load deactivated assets data with optional search filter"""
         try:
             # Clear existing items
             for item in self.deactivated_tree.get_children():
                 self.deactivated_tree.delete(item)
 
             cursor = self.conn.cursor()
-            cursor.execute('''
-                SELECT bfm_equipment_no, description, location, deactivated_by, deactivated_date, reason
-                FROM deactivated_assets
-                WHERE status = 'Deactivated'
-                ORDER BY deactivated_date DESC
-            ''')
 
+            # Build query with JOIN to get SAP number from equipment table
+            query = '''
+                SELECT da.bfm_equipment_no, da.description, da.location,
+                       da.deactivated_by, da.deactivated_date, da.reason,
+                       e.sap_material_no
+                FROM deactivated_assets da
+                LEFT JOIN equipment e ON TRIM(da.bfm_equipment_no) = TRIM(e.bfm_equipment_no)
+                WHERE da.status = 'Deactivated'
+            '''
+            params = []
+
+            # Add search filter if provided
+            if search_term:
+                query += ''' AND (
+                    LOWER(da.bfm_equipment_no) LIKE LOWER(%s) OR
+                    LOWER(da.description) LIKE LOWER(%s) OR
+                    LOWER(e.sap_material_no) LIKE LOWER(%s)
+                )'''
+                search_param = f'%{search_term}%'
+                params.extend([search_param] * 3)
+
+            query += ' ORDER BY da.deactivated_date DESC'
+
+            cursor.execute(query, params)
             assets = cursor.fetchall()
 
             for asset in assets:
-                bfm_no, description, location, deactivated_by, deactivated_date, reason = asset
+                bfm_no, description, location, deactivated_by, deactivated_date, reason, sap_no = asset
                 self.deactivated_tree.insert('', 'end', values=(
                     bfm_no,
                     description or '',
@@ -15072,10 +15101,30 @@ class AITCMMSSystem:
             # Update status bar
             count = len(assets)
             if hasattr(self, 'update_status'):
-                self.update_status(f"Showing {count} Deactivated assets")
+                if search_term:
+                    self.update_status(f"Showing {count} Deactivated assets (filtered)")
+                else:
+                    self.update_status(f"Showing {count} Deactivated assets")
 
         except Exception as e:
             print(f"Error loading deactivated assets: {e}")
+
+
+    def filter_deactivated_list(self, *args):
+        """Filter deactivated assets list based on search term"""
+        try:
+            # Check if deactivated tree exists yet (might be called during tab creation)
+            if not hasattr(self, 'deactivated_tree'):
+                return
+
+            # Get search term from entry field
+            search_term = self.deactivated_search_entry.get().strip() if hasattr(self, 'deactivated_search_entry') else ''
+
+            # Reload deactivated assets with search filter
+            self.load_deactivated_assets(search_term=search_term if search_term else None)
+
+        except Exception as e:
+            print(f"Error filtering deactivated assets: {e}")
 
 
     def import_deactivated_csv(self):
