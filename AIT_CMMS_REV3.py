@@ -19856,6 +19856,12 @@ class AITCMMSSystem:
             entry.grid(row=i, column=1, padx=10, pady=5)
             entries[label] = var
 
+        # Add note for BFM number (optional for deactivated assets)
+        bfm_note_label = ttk.Label(scrollable_frame,
+                                    text="(Optional for deactivated assets - auto-generated if blank)",
+                                    font=('Arial', 8), foreground='gray')
+        bfm_note_label.grid(row=1, column=2, sticky='w', padx=5, pady=5)
+
         # PM type checkboxes
         pm_frame = ttk.LabelFrame(scrollable_frame, text="PM Types", padding=10)
         pm_frame.grid(row=len(fields), column=0, columnspan=2, padx=10, pady=10, sticky='ew')
@@ -19978,6 +19984,40 @@ class AITCMMSSystem:
                         messagebox.showwarning("Missing Information", "Please select who is deactivating this asset")
                         return
 
+                # Handle BFM number validation and auto-generation
+                bfm_no = entries["BFM Equipment No:"].get().strip()
+
+                # If no BFM number provided
+                if not bfm_no:
+                    if is_deactivated:
+                        # Auto-generate BFM number for deactivated assets
+                        import time
+                        import random
+                        timestamp = int(time.time())
+                        rand_suffix = random.randint(1000, 9999)
+                        bfm_no = f"NO-BFM-{timestamp}-{rand_suffix}"
+
+                        # Verify uniqueness (in case of collision)
+                        with db_pool.get_cursor(commit=False) as cursor:
+                            cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                            if cursor.fetchone()[0] > 0:
+                                # If collision, add another random suffix
+                                bfm_no = f"NO-BFM-{timestamp}-{rand_suffix}-{random.randint(100, 999)}"
+
+                        # Update the entry field to show the generated number
+                        entries["BFM Equipment No:"].set(bfm_no)
+                    else:
+                        # BFM number is required for non-deactivated assets
+                        messagebox.showwarning("Missing Information", "BFM Equipment No. is required for active assets")
+                        return
+                else:
+                    # Verify BFM number doesn't already exist
+                    with db_pool.get_cursor(commit=False) as cursor:
+                        cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                        if cursor.fetchone()[0] > 0:
+                            messagebox.showerror("Duplicate BFM", f"BFM Equipment No '{bfm_no}' already exists. Please use a unique BFM number.")
+                            return
+
                 # Validate and parse First PM Date
                 first_pm_date_str = first_pm_date_var.get().strip()
                 next_weekly = None
@@ -20039,7 +20079,7 @@ class AITCMMSSystem:
                 equipment_status = 'Deactivated' if is_deactivated else 'Active'
 
                 # Get equipment details for deactivated_assets table
-                bfm_no = entries["BFM Equipment No:"].get().strip()
+                # Note: bfm_no already set above (validated or auto-generated)
                 description = entries["Description:"].get().strip()
                 location = entries["Location:"].get().strip()
 
@@ -20097,6 +20137,9 @@ class AITCMMSSystem:
                 if is_deactivated:
                     success_msg = f"Equipment {bfm_no} added successfully!\n\n"
                     success_msg += "Status: Deactivated\n"
+                    # Show if BFM was auto-generated
+                    if bfm_no.startswith("NO-BFM-"):
+                        success_msg += f"- BFM Number: {bfm_no} (auto-generated)\n"
                     success_msg += f"- Deactivated by: {deact_tech_var.get().strip()}\n"
                     if deact_reason_var.get().strip():
                         success_msg += f"- Reason: {deact_reason_var.get().strip()}\n"
