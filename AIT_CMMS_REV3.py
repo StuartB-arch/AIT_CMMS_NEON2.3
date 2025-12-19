@@ -1631,7 +1631,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                     part_name = name if name else "Unknown Part"
                     quantity = qty if qty else 0
                     price = unit_price if unit_price else 0.0
-                    cost = total_cost if total_cost else (quantity * price)
+                    # Always use current unit_price from mro_inventory, not cached total_cost
+                    cost = quantity * price
                     unit = uom if uom else "EA"
 
                     print(f"    - Part#: {part_number} | {part_name}")
@@ -1773,7 +1774,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                     part_name = name if name else "Unknown Part"
                     quantity = qty if qty else 0
                     price = unit_price if unit_price else 0.0
-                    cost = total_cost if total_cost else (quantity * price)
+                    # Always use current unit_price from mro_inventory, not cached total_cost
+                    cost = quantity * price
                     unit = uom if uom else "EA"
 
                     print(f"    - Part#: {part_number} | {part_name}")
@@ -3111,7 +3113,8 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                         part_name = name if name else "Unknown Part"
                         quantity = qty if qty else 0
                         price = unit_price if unit_price else 0.0
-                        cost = total_cost if total_cost else (quantity * price)
+                        # Always use current unit_price from mro_inventory, not cached total_cost
+                        cost = quantity * price
                         unit = uom if uom else "EA"
 
                         parts_table_data.append([
@@ -3319,7 +3322,8 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                         part_name = name if name else "Unknown Part"
                         quantity = qty if qty else 0
                         price = unit_price if unit_price else 0.0
-                        cost = total_cost if total_cost else (quantity * price)
+                        # Always use current unit_price from mro_inventory, not cached total_cost
+                        cost = quantity * price
                         unit = uom if uom else "EA"
 
                         parts_table_data.append([
