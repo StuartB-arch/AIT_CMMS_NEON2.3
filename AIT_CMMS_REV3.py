@@ -2009,6 +2009,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         print()
     
     # 4. TECHNICIAN PERFORMANCE (PM Completions only)
+    # Get completions per technician
     cursor.execute('''
         SELECT
             technician_name,
@@ -2021,17 +2022,79 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         GROUP BY technician_name
         ORDER BY completions DESC
     ''', (year, month))
-    
-    technicians = cursor.fetchall()
-    
-    if technicians:
+
+    completions_data = {row[0]: {'count': row[1], 'total_hrs': row[2], 'avg_hrs': row[3]}
+                        for row in cursor.fetchall()}
+
+    # Get assigned PMs per technician for completion rate calculation
+    # Count PMs that were scheduled for completion in this month
+    cursor.execute('''
+        SELECT
+            assigned_technician,
+            COUNT(*) as assigned_count
+        FROM weekly_pm_schedules
+        WHERE EXTRACT(YEAR FROM scheduled_date::date) = %s
+        AND EXTRACT(MONTH FROM scheduled_date::date) = %s
+        AND assigned_technician IS NOT NULL
+        AND assigned_technician != ''
+        GROUP BY assigned_technician
+    ''', (year, month))
+
+    assigned_pms = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # Get Cannot Find count per technician for this month
+    cursor.execute('''
+        SELECT
+            assigned_technician,
+            COUNT(*) as cannot_find_count
+        FROM weekly_pm_schedules
+        WHERE EXTRACT(YEAR FROM scheduled_date::date) = %s
+        AND EXTRACT(MONTH FROM scheduled_date::date) = %s
+        AND status = 'Cannot Find'
+        AND assigned_technician IS NOT NULL
+        AND assigned_technician != ''
+        GROUP BY assigned_technician
+    ''', (year, month))
+
+    cannot_find_pms = {row[0]: row[1] for row in cursor.fetchall()}
+
+    # Build complete list of all technicians with any activity
+    all_technicians = set(list(assigned_pms.keys()) + list(completions_data.keys()) + list(cannot_find_pms.keys()))
+
+    if all_technicians:
         print("TECHNICIAN PERFORMANCE:")
-        print(f"{'Technician':<25} {'Completions':<15} {'Total Hours':<15} {'Avg Hours':<12}")
-        print("-" * 70)
-        for tech, count, total_hrs, avg_hrs in technicians:
+        print(f"{'Technician':<25} {'Assigned':<12} {'Completed':<12} {'Cannot Find':<14} {'Rate':<12} {'Total Hours':<15} {'Avg Hours':<12}")
+        print("-" * 110)
+
+        # Sort technicians by completion count (descending), then by name
+        tech_list = sorted(all_technicians,
+                          key=lambda t: (completions_data.get(t, {}).get('count', 0), t),
+                          reverse=True)
+
+        for tech in tech_list:
+            # Get assigned PM count for this technician
+            assigned_count = assigned_pms.get(tech, 0)
+
+            # Get completion data for this technician
+            comp_data = completions_data.get(tech, {'count': 0, 'total_hrs': 0.0, 'avg_hrs': 0.0})
+            count = comp_data['count']
+            total_hrs = comp_data['total_hrs']
+            avg_hrs = comp_data['avg_hrs']
+
+            # Get Cannot Find count for this technician (0 if none)
+            cf_count = cannot_find_pms.get(tech, 0)
+
+            # Calculate completion rate percentage
+            if assigned_count > 0:
+                completion_rate = (count / assigned_count) * 100
+                rate_display = f"{completion_rate:.1f}%"
+            else:
+                # If no assigned PMs tracked, show count without percentage
+                rate_display = "N/A"
+
             total_hrs_display = f"{total_hrs:.1f}h" if total_hrs else "0.0h"
             avg_hrs_display = f"{avg_hrs:.1f}h" if avg_hrs else "0.0h"
-            print(f"{tech:<25} {count:<15} {total_hrs_display:<15} {avg_hrs_display:<12}")
+            print(f"{tech:<25} {assigned_count:<12} {count:<12} {cf_count:<14} {rate_display:<12} {total_hrs_display:<15} {avg_hrs_display:<12}")
         print()
     
     # 5. CM BREAKDOWN BY PRIORITY AND TECHNICIAN
