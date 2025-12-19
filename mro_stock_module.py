@@ -1456,14 +1456,14 @@ class MROStockManager:
                 SELECT
                     mi.part_number,
                     mi.name,
-                    SUM(cp.quantity_used) as total_qty,
+                    mi.quantity,
                     COUNT(DISTINCT cp.cm_number) as cm_count,
                     mi.unit_price,
                     SUM(cp.quantity_used * mi.unit_price) as total_cost
                 FROM cm_parts_used cp
                 JOIN mro_inventory mi ON cp.part_number = mi.part_number
                 WHERE cp.recorded_date::timestamp >= CURRENT_DATE - INTERVAL '90 days'
-                GROUP BY mi.part_number, mi.name, mi.unit_price
+                GROUP BY mi.part_number, mi.name, mi.quantity, mi.unit_price
                 ORDER BY total_cost DESC
                 LIMIT 50
             ''')
@@ -1474,25 +1474,25 @@ class MROStockManager:
             messagebox.showerror("Database Error", f"Error loading usage report: {str(e)}")
             report_dialog.destroy()
             return
-    
+
         # Display in treeview
-        columns = ('Part #', 'Part Name', 'Total Qty Used', 'CMs Used In', 'Total Cost')
+        columns = ('Part #', 'Part Name', 'Qty in Stock', 'CMs Used In', 'Total Cost')
         tree = ttk.Treeview(report_frame, columns=columns, show='headings')
-    
+
         for col in columns:
             tree.heading(col, text=col)
-    
+
         tree.column('Part #', width=120)
         tree.column('Part Name', width=250)
-        tree.column('Total Qty Used', width=120)
+        tree.column('Qty in Stock', width=120)
         tree.column('CMs Used In', width=100)
         tree.column('Total Cost', width=120)
-    
+
         for row in usage_data:
             tree.insert('', 'end', values=(
                 row[0],  # part_number
                 row[1],  # name
-                f"{row[2]:.2f}",  # total_qty
+                f"{row[2]:.2f}",  # quantity in stock (from mro_inventory.quantity)
                 row[3],  # cm_count
                 f"${row[5]:.2f}" if row[5] else '$0.00'  # total_cost (calculated from current unit_price)
             ))
