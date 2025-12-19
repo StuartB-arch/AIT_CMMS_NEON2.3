@@ -439,7 +439,8 @@ class CMPartsIntegration:
                     cp.part_number,
                     mi.name,
                     cp.quantity_used,
-                    cp.total_cost,
+                    mi.unit_price,
+                    mi.unit_of_measure,
                     cp.recorded_date,
                     cp.recorded_by,
                     cp.notes
@@ -498,16 +499,22 @@ class CMPartsIntegration:
         for part in parts_data:
             part_number = part[0]
             description = part[1] if part[1] else "N/A"
-            qty_used = f"{part[2]:.2f}" if part[2] else "0"
-            cost = part[3] if part[3] else 0.0
+            qty_used = part[2] if part[2] else 0.0
+            unit_price = part[3] if part[3] else 0.0
+            unit_of_measure = part[4] if part[4] else "EA"
+            date_recorded = str(part[5])[:19] if part[5] else "N/A"
+            recorded_by = part[6] if part[6] else "N/A"
+
+            # Always calculate cost from current unit_price, not cached total_cost
+            cost = qty_used * unit_price
             total_cost += cost
-            date_recorded = str(part[4])[:19] if part[4] else "N/A"
-            recorded_by = part[5] if part[5] else "N/A"
+
+            qty_display = f"{qty_used:.2f} {unit_of_measure}"
 
             parts_tree.insert('', 'end', values=(
                 part_number,
                 description,
-                qty_used,
+                qty_display,
                 f"${cost:.2f}",
                 date_recorded,
                 recorded_by
