@@ -19991,18 +19991,18 @@ class AITCMMSSystem:
                 if not bfm_no:
                     if is_deactivated:
                         # Auto-generate BFM number for deactivated assets
-                        import time
-                        import random
-                        timestamp = int(time.time())
+                        timestamp = int(datetime.now().timestamp())
                         rand_suffix = random.randint(1000, 9999)
                         bfm_no = f"NO-BFM-{timestamp}-{rand_suffix}"
 
                         # Verify uniqueness (in case of collision)
-                        with db_pool.get_cursor(commit=False) as cursor:
-                            cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
-                            if cursor.fetchone()[0] > 0:
-                                # If collision, add another random suffix
-                                bfm_no = f"NO-BFM-{timestamp}-{rand_suffix}-{random.randint(100, 999)}"
+                        cursor = self.conn.cursor()
+                        cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                        result = cursor.fetchone()
+                        if result and result[0] > 0:
+                            # If collision, add another random suffix
+                            bfm_no = f"NO-BFM-{timestamp}-{rand_suffix}-{random.randint(100, 999)}"
+                        cursor.close()
 
                         # Update the entry field to show the generated number
                         entries["BFM Equipment No:"].set(bfm_no)
@@ -20012,11 +20012,13 @@ class AITCMMSSystem:
                         return
                 else:
                     # Verify BFM number doesn't already exist
-                    with db_pool.get_cursor(commit=False) as cursor:
-                        cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
-                        if cursor.fetchone()[0] > 0:
-                            messagebox.showerror("Duplicate BFM", f"BFM Equipment No '{bfm_no}' already exists. Please use a unique BFM number.")
-                            return
+                    cursor = self.conn.cursor()
+                    cursor.execute('SELECT COUNT(*) FROM equipment WHERE bfm_equipment_no = %s', (bfm_no,))
+                    result = cursor.fetchone()
+                    cursor.close()
+                    if result and result[0] > 0:
+                        messagebox.showerror("Duplicate BFM", f"BFM Equipment No '{bfm_no}' already exists. Please use a unique BFM number.")
+                        return
 
                 # Validate and parse First PM Date
                 first_pm_date_str = first_pm_date_var.get().strip()
@@ -20083,55 +20085,59 @@ class AITCMMSSystem:
                 description = entries["Description:"].get().strip()
                 location = entries["Location:"].get().strip()
 
-                with db_pool.get_cursor(commit=True) as cursor:
-                    # Insert equipment with appropriate status
+                # Insert equipment with appropriate status
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    INSERT INTO equipment
+                    (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
+                     location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
+                     next_weekly_pm, next_monthly_pm, next_six_month_pm, next_annual_pm,
+                     picture_1_data, picture_2_data, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    entries["SAP Material No:"].get().strip(),
+                    bfm_no,
+                    description,
+                    entries["Tool ID/Drawing No:"].get().strip(),
+                    location,
+                    entries["Master LIN:"].get().strip(),
+                    weekly_var.get(),
+                    monthly_var.get(),
+                    six_month_var.get(),
+                    annual_var.get(),
+                    next_weekly,
+                    next_monthly,
+                    next_six_month,
+                    next_annual,
+                    pic1_data,
+                    pic2_data,
+                    equipment_status
+                ))
+
+                # If marked as deactivated, add to deactivated_assets table
+                if is_deactivated:
+                    deact_technician = deact_tech_var.get().strip()
+                    deact_reason = deact_reason_var.get().strip()
+                    deactivated_date = datetime.now().strftime('%Y-%m-%d')
+
                     cursor.execute('''
-                        INSERT INTO equipment
-                        (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
-                         location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
-                         next_weekly_pm, next_monthly_pm, next_six_month_pm, next_annual_pm,
-                         picture_1_data, picture_2_data, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO deactivated_assets
+                        (bfm_equipment_no, description, location, deactivated_by,
+                         deactivated_date, reason, status, notes)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'Deactivated', %s)
                     ''', (
-                        entries["SAP Material No:"].get().strip(),
                         bfm_no,
                         description,
-                        entries["Tool ID/Drawing No:"].get().strip(),
                         location,
-                        entries["Master LIN:"].get().strip(),
-                        weekly_var.get(),
-                        monthly_var.get(),
-                        six_month_var.get(),
-                        annual_var.get(),
-                        next_weekly,
-                        next_monthly,
-                        next_six_month,
-                        next_annual,
-                        pic1_data,
-                        pic2_data,
-                        equipment_status
+                        deact_technician,
+                        deactivated_date,
+                        deact_reason,
+                        'Equipment marked as Deactivated when added via add equipment dialog'
                     ))
 
-                    # If marked as deactivated, add to deactivated_assets table
-                    if is_deactivated:
-                        deact_technician = deact_tech_var.get().strip()
-                        deact_reason = deact_reason_var.get().strip()
-                        deactivated_date = datetime.now().strftime('%Y-%m-%d')
-
-                        cursor.execute('''
-                            INSERT INTO deactivated_assets
-                            (bfm_equipment_no, description, location, deactivated_by,
-                             deactivated_date, reason, status, notes)
-                            VALUES (%s, %s, %s, %s, %s, %s, 'Deactivated', %s)
-                        ''', (
-                            bfm_no,
-                            description,
-                            location,
-                            deact_technician,
-                            deactivated_date,
-                            deact_reason,
-                            'Equipment marked as Deactivated when added via add equipment dialog'
-                        ))
+                # Commit the transaction
+                self.conn.commit()
+                cursor.close()
 
                 # Show appropriate success message
                 if is_deactivated:
