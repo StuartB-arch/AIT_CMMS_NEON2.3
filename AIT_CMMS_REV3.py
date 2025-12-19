@@ -19865,10 +19865,64 @@ class AITCMMSSystem:
         six_month_var = tk.BooleanVar(value=True)
         annual_var = tk.BooleanVar(value=True)
 
-        ttk.Checkbutton(pm_frame, text="Weekly PM", variable=weekly_var).pack(anchor='w')
-        ttk.Checkbutton(pm_frame, text="Monthly PM", variable=monthly_var).pack(anchor='w')
-        ttk.Checkbutton(pm_frame, text="Six Month PM", variable=six_month_var).pack(anchor='w')
-        ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var).pack(anchor='w')
+        weekly_cb = ttk.Checkbutton(pm_frame, text="Weekly PM", variable=weekly_var)
+        weekly_cb.pack(anchor='w')
+        monthly_cb = ttk.Checkbutton(pm_frame, text="Monthly PM", variable=monthly_var)
+        monthly_cb.pack(anchor='w')
+        six_month_cb = ttk.Checkbutton(pm_frame, text="Six Month PM", variable=six_month_var)
+        six_month_cb.pack(anchor='w')
+        annual_cb = ttk.Checkbutton(pm_frame, text="Annual PM", variable=annual_var)
+        annual_cb.pack(anchor='w')
+
+        # Deactivated option
+        deactivated_var = tk.BooleanVar(value=False)
+        deact_cb = ttk.Checkbutton(pm_frame, text="Mark as Deactivated",
+                            variable=deactivated_var,
+                            command=lambda: toggle_deactivated())
+        deact_cb.pack(anchor='w', pady=5)
+
+        # Deactivated warning label
+        deact_warning_label = ttk.Label(pm_frame, text="Status: Will be set to Deactivated (PMs disabled)",
+                                    foreground='red', font=('Arial', 9, 'italic'))
+
+        # Deactivated fields frame (appears when Deactivated is checked)
+        deact_frame = ttk.Frame(pm_frame)
+        ttk.Label(deact_frame, text="Deactivated By:").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        deact_tech_var = tk.StringVar()
+        deact_tech_combo = ttk.Combobox(deact_frame, textvariable=deact_tech_var, width=20)
+        deact_tech_combo['values'] = self.technicians if hasattr(self, 'technicians') else []
+        deact_tech_combo.grid(row=0, column=1, sticky='w')
+
+        ttk.Label(deact_frame, text="Reason:").grid(row=1, column=0, sticky='w', padx=(0, 5), pady=5)
+        deact_reason_var = tk.StringVar()
+        deact_reason_entry = ttk.Entry(deact_frame, textvariable=deact_reason_var, width=40)
+        deact_reason_entry.grid(row=1, column=1, sticky='w', pady=5)
+
+        def toggle_deactivated():
+            """Enable/disable options based on deactivation status"""
+            if deactivated_var.get():
+                # Disable PM options when deactivated
+                weekly_cb.config(state='disabled')
+                monthly_cb.config(state='disabled')
+                six_month_cb.config(state='disabled')
+                annual_cb.config(state='disabled')
+                weekly_var.set(False)
+                monthly_var.set(False)
+                six_month_var.set(False)
+                annual_var.set(False)
+                deact_warning_label.pack(anchor='w', padx=20)
+                deact_frame.pack(anchor='w', pady=5, padx=20)
+            else:
+                # Re-enable PM options when not deactivated
+                weekly_cb.config(state='normal')
+                monthly_cb.config(state='normal')
+                six_month_cb.config(state='normal')
+                annual_cb.config(state='normal')
+                monthly_var.set(True)
+                six_month_var.set(True)
+                annual_var.set(True)
+                deact_warning_label.pack_forget()
+                deact_frame.pack_forget()
 
         # First PM Date section
         date_frame = ttk.LabelFrame(scrollable_frame, text="Maintenance Start Date", padding=10)
@@ -19914,6 +19968,16 @@ class AITCMMSSystem:
 
         def save_equipment():
             try:
+                # Check if equipment is being marked as deactivated
+                is_deactivated = deactivated_var.get()
+
+                # Validate deactivation fields if marking as deactivated
+                if is_deactivated:
+                    deact_technician = deact_tech_var.get().strip()
+                    if not deact_technician:
+                        messagebox.showwarning("Missing Information", "Please select who is deactivating this asset")
+                        return
+
                 # Validate and parse First PM Date
                 first_pm_date_str = first_pm_date_var.get().strip()
                 next_weekly = None
@@ -19971,20 +20035,29 @@ class AITCMMSSystem:
                     with open(pic2_path, 'rb') as f:
                         pic2_data = f.read()
 
+                # Set status based on deactivation
+                equipment_status = 'Deactivated' if is_deactivated else 'Active'
+
+                # Get equipment details for deactivated_assets table
+                bfm_no = entries["BFM Equipment No:"].get().strip()
+                description = entries["Description:"].get().strip()
+                location = entries["Location:"].get().strip()
+
                 with db_pool.get_cursor(commit=True) as cursor:
+                    # Insert equipment with appropriate status
                     cursor.execute('''
                         INSERT INTO equipment
                         (sap_material_no, bfm_equipment_no, description, tool_id_drawing_no,
                          location, master_lin, weekly_pm, monthly_pm, six_month_pm, annual_pm,
                          next_weekly_pm, next_monthly_pm, next_six_month_pm, next_annual_pm,
-                         picture_1_data, picture_2_data)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         picture_1_data, picture_2_data, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         entries["SAP Material No:"].get().strip(),
-                        entries["BFM Equipment No:"].get().strip(),
-                        entries["Description:"].get().strip(),
+                        bfm_no,
+                        description,
                         entries["Tool ID/Drawing No:"].get().strip(),
-                        entries["Location:"].get().strip(),
+                        location,
                         entries["Master LIN:"].get().strip(),
                         weekly_var.get(),
                         monthly_var.get(),
@@ -19995,11 +20068,56 @@ class AITCMMSSystem:
                         next_six_month,
                         next_annual,
                         pic1_data,
-                        pic2_data
+                        pic2_data,
+                        equipment_status
                     ))
-                messagebox.showinfo("Success", "Equipment added successfully!")
+
+                    # If marked as deactivated, add to deactivated_assets table
+                    if is_deactivated:
+                        deact_technician = deact_tech_var.get().strip()
+                        deact_reason = deact_reason_var.get().strip()
+                        deactivated_date = datetime.now().strftime('%Y-%m-%d')
+
+                        cursor.execute('''
+                            INSERT INTO deactivated_assets
+                            (bfm_equipment_no, description, location, deactivated_by,
+                             deactivated_date, reason, status, notes)
+                            VALUES (%s, %s, %s, %s, %s, %s, 'Deactivated', %s)
+                        ''', (
+                            bfm_no,
+                            description,
+                            location,
+                            deact_technician,
+                            deactivated_date,
+                            deact_reason,
+                            'Equipment marked as Deactivated when added via add equipment dialog'
+                        ))
+
+                # Show appropriate success message
+                if is_deactivated:
+                    success_msg = f"Equipment {bfm_no} added successfully!\n\n"
+                    success_msg += "Status: Deactivated\n"
+                    success_msg += f"- Deactivated by: {deact_tech_var.get().strip()}\n"
+                    if deact_reason_var.get().strip():
+                        success_msg += f"- Reason: {deact_reason_var.get().strip()}\n"
+                    success_msg += "- Equipment added to Deactivated list\n"
+                    success_msg += "- Counted in total assets\n"
+                    success_msg += "- All PM requirements disabled"
+                    messagebox.showinfo("Success", success_msg)
+                else:
+                    messagebox.showinfo("Success", "Equipment added successfully!")
+
                 dialog.destroy()
                 self.refresh_equipment_list()
+
+                # Refresh deactivated assets list if equipment was deactivated
+                if is_deactivated and hasattr(self, 'load_deactivated_assets'):
+                    self.load_deactivated_assets()
+
+                # Update equipment statistics
+                if hasattr(self, 'update_equipment_statistics'):
+                    self.update_equipment_statistics()
+
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to add equipment: {str(e)}")
 
