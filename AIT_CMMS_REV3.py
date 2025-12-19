@@ -2009,6 +2009,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         print()
     
     # 4. TECHNICIAN PERFORMANCE (PM Completions only)
+    # Get completions per technician
     cursor.execute('''
         SELECT
             technician_name,
@@ -2022,7 +2023,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         ORDER BY completions DESC
     ''', (year, month))
 
-    technicians = cursor.fetchall()
+    completions_data = {row[0]: {'count': row[1], 'total_hrs': row[2], 'avg_hrs': row[3]}
+                        for row in cursor.fetchall()}
 
     # Get assigned PMs per technician for completion rate calculation
     # Count PMs that were scheduled for completion in this month
@@ -2056,13 +2058,28 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
     cannot_find_pms = {row[0]: row[1] for row in cursor.fetchall()}
 
-    if technicians:
+    # Build complete list of all technicians with any activity
+    all_technicians = set(list(assigned_pms.keys()) + list(completions_data.keys()) + list(cannot_find_pms.keys()))
+
+    if all_technicians:
         print("TECHNICIAN PERFORMANCE:")
         print(f"{'Technician':<25} {'Assigned':<12} {'Completed':<12} {'Cannot Find':<14} {'Rate':<12} {'Total Hours':<15} {'Avg Hours':<12}")
         print("-" * 110)
-        for tech, count, total_hrs, avg_hrs in technicians:
+
+        # Sort technicians by completion count (descending), then by name
+        tech_list = sorted(all_technicians,
+                          key=lambda t: (completions_data.get(t, {}).get('count', 0), t),
+                          reverse=True)
+
+        for tech in tech_list:
             # Get assigned PM count for this technician
             assigned_count = assigned_pms.get(tech, 0)
+
+            # Get completion data for this technician
+            comp_data = completions_data.get(tech, {'count': 0, 'total_hrs': 0.0, 'avg_hrs': 0.0})
+            count = comp_data['count']
+            total_hrs = comp_data['total_hrs']
+            avg_hrs = comp_data['avg_hrs']
 
             # Get Cannot Find count for this technician (0 if none)
             cf_count = cannot_find_pms.get(tech, 0)
