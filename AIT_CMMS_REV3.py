@@ -2021,17 +2021,44 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         GROUP BY technician_name
         ORDER BY completions DESC
     ''', (year, month))
-    
+
     technicians = cursor.fetchall()
-    
+
+    # Get assigned PMs per technician for completion rate calculation
+    # Count PMs that were scheduled for completion in this month
+    cursor.execute('''
+        SELECT
+            assigned_technician,
+            COUNT(*) as assigned_count
+        FROM weekly_pm_schedules
+        WHERE EXTRACT(YEAR FROM scheduled_date::date) = %s
+        AND EXTRACT(MONTH FROM scheduled_date::date) = %s
+        AND assigned_technician IS NOT NULL
+        AND assigned_technician != ''
+        GROUP BY assigned_technician
+    ''', (year, month))
+
+    assigned_pms = {row[0]: row[1] for row in cursor.fetchall()}
+
     if technicians:
         print("TECHNICIAN PERFORMANCE:")
-        print(f"{'Technician':<25} {'Completions':<15} {'Total Hours':<15} {'Avg Hours':<12}")
-        print("-" * 70)
+        print(f"{'Technician':<25} {'Assigned':<12} {'Completed':<12} {'Rate':<12} {'Total Hours':<15} {'Avg Hours':<12}")
+        print("-" * 95)
         for tech, count, total_hrs, avg_hrs in technicians:
+            # Get assigned PM count for this technician
+            assigned_count = assigned_pms.get(tech, 0)
+
+            # Calculate completion rate percentage
+            if assigned_count > 0:
+                completion_rate = (count / assigned_count) * 100
+                rate_display = f"{completion_rate:.1f}%"
+            else:
+                # If no assigned PMs tracked, show count without percentage
+                rate_display = "N/A"
+
             total_hrs_display = f"{total_hrs:.1f}h" if total_hrs else "0.0h"
             avg_hrs_display = f"{avg_hrs:.1f}h" if avg_hrs else "0.0h"
-            print(f"{tech:<25} {count:<15} {total_hrs_display:<15} {avg_hrs_display:<12}")
+            print(f"{tech:<25} {assigned_count:<12} {count:<12} {rate_display:<12} {total_hrs_display:<15} {avg_hrs_display:<12}")
         print()
     
     # 5. CM BREAKDOWN BY PRIORITY AND TECHNICIAN
