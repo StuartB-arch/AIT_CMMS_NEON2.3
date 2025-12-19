@@ -2040,13 +2040,32 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
     assigned_pms = {row[0]: row[1] for row in cursor.fetchall()}
 
+    # Get Cannot Find count per technician for this month
+    cursor.execute('''
+        SELECT
+            assigned_technician,
+            COUNT(*) as cannot_find_count
+        FROM weekly_pm_schedules
+        WHERE EXTRACT(YEAR FROM scheduled_date::date) = %s
+        AND EXTRACT(MONTH FROM scheduled_date::date) = %s
+        AND status = 'Cannot Find'
+        AND assigned_technician IS NOT NULL
+        AND assigned_technician != ''
+        GROUP BY assigned_technician
+    ''', (year, month))
+
+    cannot_find_pms = {row[0]: row[1] for row in cursor.fetchall()}
+
     if technicians:
         print("TECHNICIAN PERFORMANCE:")
-        print(f"{'Technician':<25} {'Assigned':<12} {'Completed':<12} {'Rate':<12} {'Total Hours':<15} {'Avg Hours':<12}")
-        print("-" * 95)
+        print(f"{'Technician':<25} {'Assigned':<12} {'Completed':<12} {'Cannot Find':<14} {'Rate':<12} {'Total Hours':<15} {'Avg Hours':<12}")
+        print("-" * 110)
         for tech, count, total_hrs, avg_hrs in technicians:
             # Get assigned PM count for this technician
             assigned_count = assigned_pms.get(tech, 0)
+
+            # Get Cannot Find count for this technician (0 if none)
+            cf_count = cannot_find_pms.get(tech, 0)
 
             # Calculate completion rate percentage
             if assigned_count > 0:
@@ -2058,7 +2077,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
             total_hrs_display = f"{total_hrs:.1f}h" if total_hrs else "0.0h"
             avg_hrs_display = f"{avg_hrs:.1f}h" if avg_hrs else "0.0h"
-            print(f"{tech:<25} {assigned_count:<12} {count:<12} {rate_display:<12} {total_hrs_display:<15} {avg_hrs_display:<12}")
+            print(f"{tech:<25} {assigned_count:<12} {count:<12} {cf_count:<14} {rate_display:<12} {total_hrs_display:<15} {avg_hrs_display:<12}")
         print()
     
     # 5. CM BREAKDOWN BY PRIORITY AND TECHNICIAN
