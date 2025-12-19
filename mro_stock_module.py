@@ -1235,13 +1235,14 @@ class MROStockManager:
                         cm.description,
                         cm.bfm_equipment_no,
                         cp.quantity_used,
-                        cp.total_cost,
+                        mi.unit_price,
                         cp.recorded_date,
                         cp.recorded_by,
                         cm.status,
                         cp.notes
                     FROM cm_parts_used cp
                     LEFT JOIN corrective_maintenance cm ON cp.cm_number = cm.cm_number
+                    LEFT JOIN mro_inventory mi ON cp.part_number = mi.part_number
                     WHERE TRIM(cp.part_number) = %s
                     ORDER BY cp.recorded_date DESC
                     LIMIT 50
@@ -1257,7 +1258,8 @@ class MROStockManager:
                     total_cms = len(cm_history)
                     # Access dictionary keys instead of indices
                     total_qty_used = sum(row['quantity_used'] for row in cm_history)
-                    total_cost = sum(row['total_cost'] or 0 for row in cm_history)
+                    # Calculate total cost using current unit_price, not cached total_cost
+                    total_cost = sum((row['quantity_used'] or 0) * (row['unit_price'] or 0) for row in cm_history)
 
                     stats_text = (f"Total CMs: {total_cms} | "
                                 f"Total Quantity Used: {total_qty_used:.2f} {unit} | "
@@ -1306,12 +1308,17 @@ class MROStockManager:
     
         for row in cm_history:
             # Access dictionary keys instead of indices
+            # Calculate cost from current unit_price, not cached total_cost
+            qty = row['quantity_used'] or 0
+            unit_price = row['unit_price'] or 0
+            calculated_cost = qty * unit_price
+
             history_tree.insert('', 'end', values=(
                 row['cm_number'],
                 row['description'][:30] + '...' if row['description'] and len(row['description']) > 30 else row['description'] or 'N/A',
                 row['bfm_equipment_no'] or 'N/A',
-                f"{row['quantity_used']:.2f}",
-                f"${row['total_cost']:.2f}" if row['total_cost'] else '$0.00',
+                f"{qty:.2f}",
+                f"${calculated_cost:.2f}",
                 row['recorded_date'][:10] if row['recorded_date'] else '',
                 row['recorded_by'] or 'N/A',
                 row['status'] or 'Unknown',
@@ -1449,13 +1456,14 @@ class MROStockManager:
                 SELECT
                     mi.part_number,
                     mi.name,
-                    SUM(cp.quantity_used) as total_qty,
+                    mi.quantity,
                     COUNT(DISTINCT cp.cm_number) as cm_count,
-                    SUM(cp.total_cost) as total_cost
+                    mi.unit_price,
+                    SUM(cp.quantity_used * mi.unit_price) as total_cost
                 FROM cm_parts_used cp
                 JOIN mro_inventory mi ON cp.part_number = mi.part_number
                 WHERE cp.recorded_date::timestamp >= CURRENT_DATE - INTERVAL '90 days'
-                GROUP BY mi.part_number, mi.name
+                GROUP BY mi.part_number, mi.name, mi.quantity, mi.unit_price
                 ORDER BY total_cost DESC
                 LIMIT 50
             ''')
@@ -1466,27 +1474,27 @@ class MROStockManager:
             messagebox.showerror("Database Error", f"Error loading usage report: {str(e)}")
             report_dialog.destroy()
             return
-    
+
         # Display in treeview
-        columns = ('Part #', 'Part Name', 'Total Qty Used', 'CMs Used In', 'Total Cost')
+        columns = ('Part #', 'Part Name', 'Qty in Stock', 'CMs Used In', 'Total Cost')
         tree = ttk.Treeview(report_frame, columns=columns, show='headings')
-    
+
         for col in columns:
             tree.heading(col, text=col)
-    
+
         tree.column('Part #', width=120)
         tree.column('Part Name', width=250)
-        tree.column('Total Qty Used', width=120)
+        tree.column('Qty in Stock', width=120)
         tree.column('CMs Used In', width=100)
         tree.column('Total Cost', width=120)
-    
+
         for row in usage_data:
             tree.insert('', 'end', values=(
-                row[0],
-                row[1],
-                f"{row[2]:.2f}",
-                row[3],
-                f"${row[4]:.2f}" if row[4] else '$0.00'
+                row[0],  # part_number
+                row[1],  # name
+                f"{row[2]:.2f}",  # quantity in stock (from mro_inventory.quantity)
+                row[3],  # cm_count
+                f"${row[5]:.2f}" if row[5] else '$0.00'  # total_cost (calculated from current unit_price)
             ))
     
         tree.pack(fill='both', expand=True, padx=10, pady=10)
@@ -1855,10 +1863,11 @@ class MROStockManager:
                     mi.name,
                     COUNT(DISTINCT cpu.cm_number) as cm_count,
                     SUM(cpu.quantity_used) as total_qty,
-                    SUM(cpu.total_cost) as total_cost
+                    mi.unit_price,
+                    SUM(cpu.quantity_used * mi.unit_price) as total_cost
                 FROM cm_parts_used cpu
                 LEFT JOIN mro_inventory mi ON cpu.part_number = mi.part_number
-                GROUP BY cpu.part_number, mi.name
+                GROUP BY cpu.part_number, mi.name, mi.unit_price
                 ORDER BY total_qty DESC
                 LIMIT 10
             ''')
@@ -1875,7 +1884,8 @@ class MROStockManager:
                     name = (row[1] or 'N/A')[:28]  # Truncate to fit
                     cm_count = row[2]
                     qty = float(row[3]) if row[3] else 0
-                    cost = float(row[4]) if row[4] else 0
+                    # total_cost is now at index 5 (calculated from current unit_price)
+                    cost = float(row[5]) if row[5] else 0
 
                     report.append(f"{part_num:<15} {name:<30} {cm_count:<8} {qty:<12.1f} ${cost:<14,.2f}")
             else:
