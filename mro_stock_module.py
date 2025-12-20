@@ -1456,14 +1456,14 @@ class MROStockManager:
                 SELECT
                     mi.part_number,
                     mi.name,
-                    mi.quantity,
+                    mi.quantity_in_stock,
                     COUNT(DISTINCT cp.cm_number) as cm_count,
                     mi.unit_price,
                     SUM(cp.quantity_used * mi.unit_price) as total_cost
                 FROM cm_parts_used cp
                 JOIN mro_inventory mi ON cp.part_number = mi.part_number
                 WHERE cp.recorded_date::timestamp >= CURRENT_DATE - INTERVAL '90 days'
-                GROUP BY mi.part_number, mi.name, mi.quantity, mi.unit_price
+                GROUP BY mi.part_number, mi.name, mi.quantity_in_stock, mi.unit_price
                 ORDER BY total_cost DESC
                 LIMIT 50
             ''')
