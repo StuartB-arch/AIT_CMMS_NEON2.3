@@ -8224,97 +8224,6 @@ class AITCMMSSystem:
             import traceback
             traceback.print_exc()
 
-    def create_kpi_tab(self):
-        """Create KPI Dashboard tab for managers only"""
-        try:
-            # Import PyQt5 modules needed for the KPI UI
-            from PyQt5.QtWidgets import QApplication, QWidget
-            from kpi_ui import KPIDashboard
-            import sys
-
-            # Check if QApplication instance exists
-            app = QApplication.instance()
-            if app is None:
-                app = QApplication(sys.argv)
-
-            # Create a Tkinter frame to host the PyQt widget
-            kpi_frame = ttk.Frame(self.notebook)
-            self.notebook.add(kpi_frame, text="📊 KPI Dashboard")
-
-            # Add instructions label
-            instructions = ttk.Label(
-                kpi_frame,
-                text="KPI Dashboard requires PyQt5. Click the button below to open the KPI Dashboard in a new window.",
-                wraplength=800,
-                justify='center',
-                font=('Arial', 12)
-            )
-            instructions.pack(pady=50)
-
-            # Add button to launch KPI dashboard
-            def launch_kpi_dashboard():
-                try:
-                    # Create KPI dashboard window
-                    kpi_window = KPIDashboard(db_pool, self.user_name)
-                    kpi_window.setWindowTitle("AIT CMMS - KPI Dashboard (Manager)")
-                    kpi_window.resize(1000, 700)  # Reduced from 1400x900 for better multi-monitor compatibility
-                    kpi_window.show()
-
-                    # Process events
-                    app.exec_()
-                except Exception as e:
-                    import traceback
-                    messagebox.showerror("Error", f"Failed to open KPI Dashboard:\n{str(e)}\n\n{traceback.format_exc()}")
-
-            launch_btn = ttk.Button(
-                kpi_frame,
-                text="📊 Open KPI Dashboard",
-                command=launch_kpi_dashboard
-            )
-            launch_btn.pack(pady=10)
-
-            # Add feature description
-            features_text = """
-            KPI Dashboard Features:
-
-            ✓ View all 17 KPIs from the 2025 KPI framework
-            ✓ Automatic calculation of KPIs from database
-            ✓ Manual data input for external KPIs
-            ✓ Professional PDF and Excel export
-            ✓ Monthly tracking and trending
-            ✓ Pass/Fail status indicators
-            ✓ Target vs. Actual comparisons
-
-            This dashboard is only visible to managers.
-            """
-
-            features_label = ttk.Label(
-                kpi_frame,
-                text=features_text,
-                font=('Arial', 10),
-                justify='left'
-            )
-            features_label.pack(pady=20)
-
-        except ImportError as e:
-            # PyQt5 not available, show alternative message
-            kpi_frame = ttk.Frame(self.notebook)
-            self.notebook.add(kpi_frame, text="📊 KPI Dashboard")
-
-            error_label = ttk.Label(
-                kpi_frame,
-                text=f"KPI Dashboard requires PyQt5 to be installed.\n\nError: {str(e)}\n\nPlease install PyQt5 using: pip install PyQt5",
-                font=('Arial', 12),
-                foreground='red',
-                wraplength=800,
-                justify='center'
-            )
-            error_label.pack(pady=50)
-
-        except Exception as e:
-            import traceback
-            messagebox.showerror("Error", f"Failed to create KPI tab:\n{str(e)}\n\n{traceback.format_exc()}")
-
     def create_custom_pm_template_dialog(self):
         """Dialog to create custom PM template for specific equipment"""
         dialog = tk.Toplevel(self.root)
@@ -10904,10 +10813,8 @@ class AITCMMSSystem:
         #self.create_analytics_dashboard_tab()
         self.create_cannot_find_tab()
         self.create_deactivated_tab()
-        self.create_pm_history_search_tab()
         self.create_custom_pm_templates_tab()
         self.mro_manager.create_mro_tab(self.notebook)
-        self.create_kpi_tab()  # KPI Dashboard for managers only
 
     def create_technician_tabs(self):
         """Create limited tabs for technician access"""
@@ -22723,94 +22630,6 @@ class AITCMMSSystem:
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export weekly schedule: {str(e)}")
-    
-    def create_pm_history_search_tab(self):
-        """PM History Search tab for comprehensive equipment completion information"""
-        self.pm_history_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.pm_history_frame, text="PM History Search")
-    
-        # Search controls
-        search_controls_frame = ttk.LabelFrame(self.pm_history_frame, text="Search Equipment PM History", padding=15)
-        search_controls_frame.pack(fill='x', padx=10, pady=5)
-    
-        # Search input
-        search_input_frame = ttk.Frame(search_controls_frame)
-        search_input_frame.pack(fill='x', pady=5)
-    
-        ttk.Label(search_input_frame, text="Search:").pack(side='left', padx=5)
-        self.history_search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_input_frame, textvariable=self.history_search_var, width=30)
-        search_entry.pack(side='left', padx=5)
-    
-        ttk.Button(search_input_frame, text="Search", command=self.search_pm_history_simple).pack(side='left', padx=5)
-        ttk.Button(search_input_frame, text="Clear", command=self.clear_search_simple).pack(side='left', padx=5)
-    
-        # Results display
-        results_frame = ttk.LabelFrame(self.pm_history_frame, text="Search Results", padding=10)
-        results_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    
-        # Results tree
-        self.history_search_tree = ttk.Treeview(results_frame,
-                                            columns=('BFM No', 'SAP No', 'Description', 'PM Type', 'Technician', 'Date', 'Hours'),
-                                            show='headings')
-    
-        for col in ('BFM No', 'SAP No', 'Description', 'PM Type', 'Technician', 'Date', 'Hours'):
-            self.history_search_tree.heading(col, text=col)
-            self.history_search_tree.column(col, width=120)
-    
-        self.history_search_tree.pack(fill='both', expand=True)
-
-    def search_pm_history_simple(self):
-        """Simple PM history search"""
-        try:
-            search_term = self.history_search_var.get().lower()
-            cursor = self.conn.cursor()
-        
-            if search_term:
-                cursor.execute('''
-                    SELECT pc.bfm_equipment_no, e.sap_material_no, e.description, 
-                        pc.pm_type, pc.technician_name, pc.completion_date,
-                        (pc.labor_hours + pc.labor_minutes/60.0) as total_hours
-                    FROM pm_completions pc
-                    LEFT JOIN equipment e ON pc.bfm_equipment_no = e.bfm_equipment_no
-                    WHERE LOWER(pc.bfm_equipment_no) LIKE %s
-                    OR LOWER(e.description) LIKE %s 
-                    OR LOWER(pc.technician_name) LIKE %s 
-                    ORDER BY pc.completion_date DESC LIMIT 50
-                ''', (f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
-            else:
-                cursor.execute('''
-                    SELECT pc.bfm_equipment_no, e.sap_material_no, e.description, 
-                        pc.pm_type, pc.technician_name, pc.completion_date,
-                        (pc.labor_hours + pc.labor_minutes/60.0) as total_hours
-                    FROM pm_completions pc
-                    LEFT JOIN equipment e ON pc.bfm_equipment_no = e.bfm_equipment_no
-                    ORDER BY pc.completion_date DESC LIMIT 20
-                ''')
-        
-            results = cursor.fetchall()
-        
-            # Clear existing
-            for item in self.history_search_tree.get_children():
-                self.history_search_tree.delete(item)
-        
-            # Add results
-            for result in results:
-                bfm_no, sap_no, description, pm_type, technician, date, hours = result
-                hours_display = f"{hours:.1f}h" if hours else "0.0h"
-            
-                self.history_search_tree.insert('', 'end', values=(
-                    bfm_no or '', sap_no or '', description or '', 
-                    pm_type or '', technician or '', date or '', hours_display
-                ))
-        except Exception as e:
-            print(f"Search error: {e}")
-
-    def clear_search_simple(self):
-        """Clear search"""
-        self.history_search_var.set('')
-        self.search_pm_history_simple()
-    
     
     def check_for_conflicts(self):
         """Check if SharePoint database was updated during this session"""
