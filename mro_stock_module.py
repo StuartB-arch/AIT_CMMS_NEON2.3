@@ -1458,6 +1458,7 @@ class MROStockManager:
                     mi.name,
                     mi.quantity_in_stock,
                     COUNT(DISTINCT cp.cm_number) as cm_count,
+                    SUM(cp.quantity_used) as total_qty_used,
                     mi.unit_price,
                     SUM(cp.quantity_used * mi.unit_price) as total_cost
                 FROM cm_parts_used cp
@@ -1476,25 +1477,29 @@ class MROStockManager:
             return
 
         # Display in treeview
-        columns = ('Part #', 'Part Name', 'Qty in Stock', 'CMs Used In', 'Total Cost')
+        columns = ('Part #', 'Part Name', 'Qty in Stock', 'CMs Used In', 'Total Qty Used', 'Unit Price', 'Total Cost')
         tree = ttk.Treeview(report_frame, columns=columns, show='headings')
 
         for col in columns:
             tree.heading(col, text=col)
 
         tree.column('Part #', width=120)
-        tree.column('Part Name', width=250)
-        tree.column('Qty in Stock', width=120)
+        tree.column('Part Name', width=200)
+        tree.column('Qty in Stock', width=100)
         tree.column('CMs Used In', width=100)
-        tree.column('Total Cost', width=120)
+        tree.column('Total Qty Used', width=110)
+        tree.column('Unit Price', width=100)
+        tree.column('Total Cost', width=100)
 
         for row in usage_data:
             tree.insert('', 'end', values=(
                 row[0],  # part_number
                 row[1],  # name
-                f"{row[2]:.2f}",  # quantity in stock (from mro_inventory.quantity)
+                f"{row[2]:.2f}",  # quantity_in_stock
                 row[3],  # cm_count
-                f"${row[5]:.2f}" if row[5] else '$0.00'  # total_cost (calculated from current unit_price)
+                f"{row[4]:.2f}" if row[4] else '0.00',  # total_qty_used
+                f"${row[5]:.2f}" if row[5] else '$0.00',  # unit_price
+                f"${row[6]:.2f}" if row[6] else '$0.00'  # total_cost
             ))
     
         tree.pack(fill='both', expand=True, padx=10, pady=10)
