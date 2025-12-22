@@ -12665,7 +12665,7 @@ class AITCMMSSystem:
         # Get the selected item data
         item = selected_item[0]
         asset_data = self.cannot_find_tree.item(item)['values']
-        bfm_number = asset_data[0]  # BFM is the first column
+        bfm_number = str(asset_data[0])  # BFM is the first column - convert to string for SQL query
         description = asset_data[1] if len(asset_data) > 1 else ''
 
         # Confirm permanent deletion
