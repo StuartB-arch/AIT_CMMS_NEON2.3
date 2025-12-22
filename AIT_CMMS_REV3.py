@@ -1488,23 +1488,39 @@ def generate_monthly_summary_report(conn, month=None, year=None):
 
     cms_closed_from_before = cursor.fetchone()[0] or 0
 
-    # Currently open CMs (as of report date)
+    # Calculate the last day of the reporting month
+    last_day = calendar.monthrange(year, month)[1]
+    month_end_date = f"{year}-{month:02d}-{last_day:02d}"
+
+    # Currently open CMs (as of the end of the reporting month)
+    # These are CMs that were created on or before the month end AND either:
+    # 1. Still open (status = 'Open'), OR
+    # 2. Closed after the month end
     cursor.execute('''
         SELECT COUNT(*)
         FROM corrective_maintenance
-        WHERE status = 'Open'
-    ''')
+        WHERE created_date::date <= %s::date
+        AND (
+            status = 'Open'
+            OR (status IN ('Closed', 'Completed') AND completion_date::date > %s::date)
+        )
+    ''', (month_end_date, month_end_date))
 
     cms_open_current = cursor.fetchone()[0] or 0
 
-    # Get total days open for currently open CMs
+    # Get total days open for CMs that were open as of the end of the reporting month
+    # Calculate days open from creation to the end of the reporting month
     cursor.execute('''
         SELECT
-            SUM(CURRENT_DATE - created_date::date) as total_days_open,
-            AVG(CURRENT_DATE - created_date::date) as avg_days_open
+            SUM(%s::date - created_date::date) as total_days_open,
+            AVG(%s::date - created_date::date) as avg_days_open
         FROM corrective_maintenance
-        WHERE status = 'Open'
-    ''')
+        WHERE created_date::date <= %s::date
+        AND (
+            status = 'Open'
+            OR (status IN ('Closed', 'Completed') AND completion_date::date > %s::date)
+        )
+    ''', (month_end_date, month_end_date, month_end_date, month_end_date))
 
     open_days_result = cursor.fetchone()
     cms_total_days_open = open_days_result[0] or 0
@@ -2820,18 +2836,35 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             AND (status = 'Closed' OR status = 'Completed')
         ''', (year, month, year, month))
         cms_closed_from_before = cursor.fetchone()[0] or 0
-    
-        cursor.execute("SELECT COUNT(*) FROM corrective_maintenance WHERE status = 'Open'")
+
+        # Calculate the last day of the reporting month (reuse from earlier in function)
+        last_day = calendar.monthrange(year, month)[1]
+        month_end_date = f"{year}-{month:02d}-{last_day:02d}"
+
+        # Currently open CMs (as of the end of the reporting month)
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM corrective_maintenance
+            WHERE created_date::date <= %s::date
+            AND (
+                status = 'Open'
+                OR (status IN ('Closed', 'Completed') AND completion_date::date > %s::date)
+            )
+        ''', (month_end_date, month_end_date))
         cms_open_current = cursor.fetchone()[0] or 0
 
-        # Get total days open for currently open CMs
+        # Get total days open for CMs that were open as of the end of the reporting month
         cursor.execute('''
             SELECT
-                SUM(CURRENT_DATE - created_date::date) as total_days_open,
-                AVG(CURRENT_DATE - created_date::date) as avg_days_open
+                SUM(%s::date - created_date::date) as total_days_open,
+                AVG(%s::date - created_date::date) as avg_days_open
             FROM corrective_maintenance
-            WHERE status = 'Open'
-        ''')
+            WHERE created_date::date <= %s::date
+            AND (
+                status = 'Open'
+                OR (status IN ('Closed', 'Completed') AND completion_date::date > %s::date)
+            )
+        ''', (month_end_date, month_end_date, month_end_date, month_end_date))
 
         open_days_result = cursor.fetchone()
         cms_total_days_open = open_days_result[0] or 0
