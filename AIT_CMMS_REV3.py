@@ -12654,7 +12654,7 @@ class AITCMMSSystem:
     
     
     def delete_cannot_find_asset(self):
-        """Permanently delete selected asset from the cannot_find_assets table"""
+        """Remove asset from Cannot Find list and move to Deactivated list"""
         # Get selected item
         selected_item = self.cannot_find_tree.selection()
 
@@ -12668,45 +12668,94 @@ class AITCMMSSystem:
         bfm_number = str(asset_data[0])  # BFM is the first column - convert to string for SQL query
         description = asset_data[1] if len(asset_data) > 1 else ''
 
-        # Confirm permanent deletion
+        # Confirm moving to deactivated
         result = messagebox.askyesno(
-            "Confirm Permanent Deletion", 
-            f"Permanently delete asset {bfm_number} from the Cannot Find database?\n\n"
+            "Move to Deactivated List",
+            f"Remove asset {bfm_number} from Cannot Find list and move to Deactivated?\n\n"
             f"Description: {description}\n\n"
-            "WARNING: WARNING: This action cannot be undone!\n"
-            "The asset will be completely removed from the Cannot Find list."
+            "The asset will be removed from Cannot Find and added to Deactivated.\n"
+            "It will NOT be included in PM cycles."
         )
 
         if result:
             try:
                 cursor = self.conn.cursor()
-            
+
+                # Get full asset data from cannot_find_assets before deleting
+                cursor.execute('''
+                    SELECT bfm_equipment_no, description, location, technician_name, reported_date, notes
+                    FROM cannot_find_assets
+                    WHERE bfm_equipment_no = %s
+                ''', (bfm_number,))
+
+                asset_info = cursor.fetchone()
+                if asset_info:
+                    cf_bfm, cf_desc, cf_location, cf_tech, cf_date, cf_notes = asset_info
+                else:
+                    cf_bfm = bfm_number
+                    cf_desc = description
+                    cf_location = ''
+                    cf_tech = ''
+                    cf_date = ''
+                    cf_notes = ''
+
                 # Delete from cannot_find_assets table
                 cursor.execute('DELETE FROM cannot_find_assets WHERE bfm_equipment_no = %s', (bfm_number,))
-            
-                # Optional: Update the equipment table status back to Active if it exists there
-                # You can comment this out if you don't want to change the equipment status
+
+                # Get current date
+                from datetime import datetime
+                current_date = datetime.now().strftime("%Y-%m-%d")
+
+                # Add to deactivated_assets table
                 cursor.execute('''
-                    UPDATE equipment 
-                    SET status = 'Active' 
-                    WHERE bfm_equipment_no = %s AND status = 'Cannot Find'
+                    INSERT INTO deactivated_assets
+                    (bfm_equipment_no, description, location, deactivated_by, deactivated_date, reason, status, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Deactivated', %s)
+                    ON CONFLICT (bfm_equipment_no)
+                    DO UPDATE SET
+                        description = EXCLUDED.description,
+                        location = EXCLUDED.location,
+                        deactivated_by = EXCLUDED.deactivated_by,
+                        deactivated_date = EXCLUDED.deactivated_date,
+                        reason = EXCLUDED.reason,
+                        status = EXCLUDED.status,
+                        notes = EXCLUDED.notes
+                ''', (
+                    cf_bfm,
+                    cf_desc,
+                    cf_location,
+                    cf_tech if cf_tech else 'System',
+                    current_date,
+                    f'Removed from Cannot Find list (originally reported: {cf_date})',
+                    cf_notes if cf_notes else 'Moved from Cannot Find list'
+                ))
+
+                # Update the equipment table status to Deactivated
+                cursor.execute('''
+                    UPDATE equipment
+                    SET status = 'Deactivated'
+                    WHERE bfm_equipment_no = %s
                 ''', (bfm_number,))
-            
+
                 # Commit the changes
                 self.conn.commit()
-            
+
                 # Remove from treeview display
                 self.cannot_find_tree.delete(item)
-            
+
                 # Update statistics if method exists
                 if hasattr(self, 'update_equipment_statistics'):
                     self.update_equipment_statistics()
-            
-                messagebox.showinfo("Success", f"Asset {bfm_number} has been permanently deleted from the Cannot Find list.")
-            
+
+                # Refresh deactivated tab if it exists
+                if hasattr(self, 'load_deactivated_assets'):
+                    self.load_deactivated_assets()
+
+                messagebox.showinfo("Success", f"Asset {bfm_number} has been moved from Cannot Find to Deactivated list.")
+
             except Exception as e:
                 self.conn.rollback()  # Rollback changes if there's an error
-                messagebox.showerror("Error", f"Failed to delete asset from database: {str(e)}")
+                messagebox.showerror("Error", f"Failed to move asset: {str(e)}")
                 print(f"Delete error details: {e}")
 
 
