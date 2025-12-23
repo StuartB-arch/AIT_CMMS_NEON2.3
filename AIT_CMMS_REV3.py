@@ -1585,7 +1585,9 @@ def generate_monthly_summary_report(conn, month=None, year=None):
                 cm.bfm_equipment_no,
                 cm.description,
                 cm.priority,
-                (cm.completion_date::date - cm.created_date::date) as days_to_close
+                (cm.completion_date::date - cm.created_date::date) as days_to_close,
+                cm.root_cause,
+                cm.corrective_action
             FROM corrective_maintenance cm
             WHERE EXTRACT(YEAR FROM cm.completion_date::date) = %s
             AND EXTRACT(MONTH FROM cm.completion_date::date) = %s
@@ -1596,7 +1598,7 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         closed_cms = cursor.fetchall()
 
         for cm_data in closed_cms:
-            cm_number, created_date, completion_date, technician, equipment, description, priority, days = cm_data
+            cm_number, created_date, completion_date, technician, equipment, description, priority, days, root_cause, corrective_action = cm_data
 
             # Format dates - handle both string and datetime objects
             if created_date:
@@ -1622,6 +1624,12 @@ def generate_monthly_summary_report(conn, month=None, year=None):
             print(f"  Date Closed: {completed_str}")
             print(f"  Days to Close: {days} days ({completed_str} - {created_str})")
             print(f"  Technician: {tech_name}")
+
+            # Display root cause and corrective action
+            root_cause_str = root_cause if root_cause else "Not recorded"
+            corrective_action_str = corrective_action if corrective_action else "Not recorded"
+            print(f"  Root Cause: {root_cause_str}")
+            print(f"  Corrective Action: {corrective_action_str}")
 
             # Get MRO stock items used for this CM
             cursor.execute('''
