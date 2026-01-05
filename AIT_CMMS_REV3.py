@@ -7772,15 +7772,23 @@ class AITCMMSSystem:
 
     def create_custom_pm_template_dialog(self):
         """Dialog to create custom PM template for specific equipment"""
+        print("="*60)
+        print("CREATE CUSTOM PM TEMPLATE DIALOG - Starting...")
+        print("="*60)
+
         dialog = tk.Toplevel(self.root)
         dialog.title("Create Custom PM Template")
         dialog.geometry("800x750")
         dialog.transient(self.root)
         dialog.grab_set()
 
+        print("Dialog window created successfully")
+
         # Equipment selection
         header_frame = ttk.LabelFrame(dialog, text="Template Information", padding=10)
         header_frame.pack(fill='x', padx=10, pady=5)
+
+        print("Header frame created")
 
         # BFM Equipment selection
         ttk.Label(header_frame, text="BFM Equipment Number:").grid(row=0, column=0, sticky='w', pady=5)
@@ -7789,11 +7797,28 @@ class AITCMMSSystem:
         bfm_combo.grid(row=0, column=1, sticky='w', padx=5, pady=5)
 
         # Populate equipment list
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT bfm_equipment_no, description FROM equipment ORDER BY bfm_equipment_no')
-        equipment_list = cursor.fetchall()
-        bfm_combo['values'] = [f"{bfm} - {desc[:30]}..." if len(desc) > 30 else f"{bfm} - {desc}" 
-                            for bfm, desc in equipment_list]
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT bfm_equipment_no, description FROM equipment ORDER BY bfm_equipment_no')
+            equipment_list = cursor.fetchall()
+
+            # Handle None/NULL descriptions properly
+            equipment_values = []
+            for bfm, desc in equipment_list:
+                if desc and len(desc) > 30:
+                    equipment_values.append(f"{bfm} - {desc[:30]}...")
+                elif desc:
+                    equipment_values.append(f"{bfm} - {desc}")
+                else:
+                    equipment_values.append(f"{bfm} - (No Description)")
+
+            bfm_combo['values'] = equipment_values
+            print(f"Loaded {len(equipment_list)} equipment items for template creation")
+        except Exception as e:
+            print(f"ERROR: Could not load equipment list: {e}")
+            messagebox.showerror("Database Error", f"Could not load equipment list:\n{e}\n\nPlease check database connection.")
+            dialog.destroy()
+            return
 
         # Template name
         ttk.Label(header_frame, text="Template Name:").grid(row=0, column=2, sticky='w', pady=5, padx=(20,5))
@@ -8252,7 +8277,11 @@ class AITCMMSSystem:
         checklist_listbox.bind('<<ListboxSelect>>', on_step_select)
 
         # Load default template initially
-        load_default_template()
+        try:
+            load_default_template()
+        except Exception as e:
+            print(f"Warning: Could not load default template on dialog open: {e}")
+            # Continue anyway - user can add steps manually
 
         # Save and Cancel buttons
         button_frame = ttk.Frame(dialog)
