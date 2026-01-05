@@ -7801,8 +7801,18 @@ class AITCMMSSystem:
             cursor = self.conn.cursor()
             cursor.execute('SELECT bfm_equipment_no, description FROM equipment ORDER BY bfm_equipment_no')
             equipment_list = cursor.fetchall()
-            bfm_combo['values'] = [f"{bfm} - {desc[:30]}..." if len(desc) > 30 else f"{bfm} - {desc}"
-                                for bfm, desc in equipment_list]
+
+            # Handle None/NULL descriptions properly
+            equipment_values = []
+            for bfm, desc in equipment_list:
+                if desc and len(desc) > 30:
+                    equipment_values.append(f"{bfm} - {desc[:30]}...")
+                elif desc:
+                    equipment_values.append(f"{bfm} - {desc}")
+                else:
+                    equipment_values.append(f"{bfm} - (No Description)")
+
+            bfm_combo['values'] = equipment_values
             print(f"Loaded {len(equipment_list)} equipment items for template creation")
         except Exception as e:
             print(f"ERROR: Could not load equipment list: {e}")
