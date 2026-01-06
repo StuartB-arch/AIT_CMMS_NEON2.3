@@ -13251,8 +13251,8 @@ class AITCMMSSystem:
             story.append(Spacer(1, 10))
 
             # Prepare table data with Paragraph objects for word wrapping
-            # Header row with Paragraph objects
-            table_data = [[Paragraph(str(col), header_style) for col in columns]]
+            # Header row with Paragraph objects (sanitize tabs)
+            table_data = [[Paragraph(str(col).replace('\t', '    '), header_style) for col in columns]]
 
             for row in cm_data:
                 formatted_row = []
@@ -13261,10 +13261,10 @@ class AITCMMSSystem:
                     if value is None or value == '':
                         cell_text = ''
                     elif i == 2:  # Description - use Paragraph for word wrap
-                        desc = str(value)
+                        desc = str(value).replace('\t', '    ')  # Replace tabs with 4 spaces
                         cell_text = Paragraph(desc, cell_style)
                     elif i in [9, 10]:  # Root cause and corrective action - use Paragraph for word wrap
-                        text = str(value) if value else ''
+                        text = str(value).replace('\t', '    ') if value else ''  # Replace tabs with 4 spaces
                         cell_text = Paragraph(text, cell_style)
                     elif i == 8:  # Labor hours - format as number
                         hours_val = f"{value:.1f}" if value else '0.0'
@@ -13289,7 +13289,8 @@ class AITCMMSSystem:
                             cell_text = Paragraph('', cell_style)
                     else:
                         # All other fields - use Paragraph for consistent formatting
-                        cell_text = Paragraph(str(value), cell_style)
+                        text = str(value).replace('\t', '    ')  # Replace tabs with 4 spaces
+                        cell_text = Paragraph(text, cell_style)
 
                     formatted_row.append(cell_text)
 
