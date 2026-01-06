@@ -13246,13 +13246,30 @@ class AITCMMSSystem:
             story.append(meta_table)
             story.append(Spacer(1, 20))
 
+            # Helper function to sanitize text for PDF Paragraphs
+            def sanitize_text_for_pdf(text):
+                """Sanitize text for ReportLab Paragraph rendering"""
+                if text is None or text == '':
+                    return ''
+                text = str(text)
+                # Replace tabs with spaces
+                text = text.replace('\t', '    ')
+                # Escape XML special characters
+                text = text.replace('&', '&amp;')
+                text = text.replace('<', '&lt;')
+                text = text.replace('>', '&gt;')
+                # Convert newlines to <br/> tags for proper rendering
+                text = text.replace('\n', '<br/>')
+                text = text.replace('\r', '')
+                return text
+
             # CM Data Table
             story.append(Paragraph("Corrective Maintenance Records", heading_style))
             story.append(Spacer(1, 10))
 
             # Prepare table data with Paragraph objects for word wrapping
             # Header row with Paragraph objects (sanitize tabs)
-            table_data = [[Paragraph(str(col).replace('\t', '    '), header_style) for col in columns]]
+            table_data = [[Paragraph(sanitize_text_for_pdf(col), header_style) for col in columns]]
 
             for row in cm_data:
                 formatted_row = []
@@ -13261,14 +13278,14 @@ class AITCMMSSystem:
                     if value is None or value == '':
                         cell_text = ''
                     elif i == 2:  # Description - use Paragraph for word wrap
-                        desc = str(value).replace('\t', '    ')  # Replace tabs with 4 spaces
+                        desc = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(desc, cell_style)
                     elif i in [9, 10]:  # Root cause and corrective action - use Paragraph for word wrap
-                        text = str(value).replace('\t', '    ') if value else ''  # Replace tabs with 4 spaces
+                        text = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(text, cell_style)
                     elif i == 8:  # Labor hours - format as number
                         hours_val = f"{value:.1f}" if value else '0.0'
-                        cell_text = Paragraph(hours_val, cell_style)
+                        cell_text = Paragraph(sanitize_text_for_pdf(hours_val), cell_style)
                     elif i in [6, 7]:  # Created Date and Closed Date - format dates
                         if value:
                             # Try to format the date nicely
@@ -13284,12 +13301,12 @@ class AITCMMSSystem:
                                         continue
                             except:
                                 pass
-                            cell_text = Paragraph(date_str, cell_style)
+                            cell_text = Paragraph(sanitize_text_for_pdf(date_str), cell_style)
                         else:
                             cell_text = Paragraph('', cell_style)
                     else:
                         # All other fields - use Paragraph for consistent formatting
-                        text = str(value).replace('\t', '    ')  # Replace tabs with 4 spaces
+                        text = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(text, cell_style)
 
                     formatted_row.append(cell_text)
