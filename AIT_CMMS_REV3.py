@@ -13021,16 +13021,10 @@ class AITCMMSSystem:
             cursor.execute(f'''
                 SELECT
                     cm_number,
-                    bfm_equipment_no,
                     description,
-                    priority,
-                    assigned_technician,
                     status,
                     created_date,
-                    {date_field} as completion_date,
-                    labor_hours,
-                    root_cause,
-                    corrective_action
+                    {date_field} as completion_date
                 FROM corrective_maintenance
                 ORDER BY created_date DESC
             ''')
@@ -13047,7 +13041,7 @@ class AITCMMSSystem:
             # Filter data based on current selections
             filtered_data = []
             for row in cm_data:
-                cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective = row
+                cm_number, desc, status, created, completion = row
 
                 # Check status filter - include both 'Closed' and 'Completed' to match Monthly PM Summary
                 if selected_status != "All":
@@ -13059,8 +13053,6 @@ class AITCMMSSystem:
                         continue
 
                 # Check month/year filter
-                # IMPORTANT: For closed CMs, filter by completion/closed date (not created date)
-                # This matches the Monthly PM Summary report logic
                 if selected_month != "All" or selected_year != "All":
                     # Determine which date to use for filtering
                     if selected_status == "Closed" or status in ['Closed', 'Completed']:
@@ -13102,8 +13094,8 @@ class AITCMMSSystem:
                         # No date available, skip if filtering
                         continue
 
-                # Add to filtered data (use completion date as closed_date for display)
-                filtered_data.append((cm_number, bfm, desc, priority, assigned, status, created, completion, labor, root_cause, corrective))
+                # Add to filtered data - only the 3 columns we want to display
+                filtered_data.append((cm_number, desc, status))
 
             if not filtered_data:
                 messagebox.showwarning("No Data", "No CM records match the current filters.")
@@ -13112,16 +13104,8 @@ class AITCMMSSystem:
             # Create DataFrame with proper column names
             columns = [
                 'CM Number',
-                'BFM',
                 'Description',
-                'Priority',
-                'Assigned',
-                'Status',
-                'Created Date',
-                'Closed Date',
-                'Labor Hours',
-                'Root Cause Analysis',
-                'Corrective Actions'
+                'Status'
             ]
 
             df = pd.DataFrame(filtered_data, columns=columns)
@@ -13277,35 +13261,11 @@ class AITCMMSSystem:
                     # Format the data for better display with word wrapping
                     if value is None or value == '':
                         cell_text = ''
-                    elif i == 2:  # Description - use Paragraph for word wrap
+                    elif i == 1:  # Description - use Paragraph for word wrap
                         desc = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(desc, cell_style)
-                    elif i in [9, 10]:  # Root cause and corrective action - use Paragraph for word wrap
-                        text = sanitize_text_for_pdf(value)
-                        cell_text = Paragraph(text, cell_style)
-                    elif i == 8:  # Labor hours - format as number
-                        hours_val = f"{value:.1f}" if value else '0.0'
-                        cell_text = Paragraph(sanitize_text_for_pdf(hours_val), cell_style)
-                    elif i in [6, 7]:  # Created Date and Closed Date - format dates
-                        if value:
-                            # Try to format the date nicely
-                            date_str = str(value).split('.')[0]  # Remove microseconds if present
-                            # Try to parse and reformat
-                            try:
-                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y']:
-                                    try:
-                                        date_obj = datetime.strptime(date_str, fmt)
-                                        date_str = date_obj.strftime('%Y-%m-%d')
-                                        break
-                                    except ValueError:
-                                        continue
-                            except:
-                                pass
-                            cell_text = Paragraph(sanitize_text_for_pdf(date_str), cell_style)
-                        else:
-                            cell_text = Paragraph('', cell_style)
                     else:
-                        # All other fields - use Paragraph for consistent formatting
+                        # CM Number and Status - use Paragraph for consistent formatting
                         text = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(text, cell_style)
 
@@ -13315,17 +13275,9 @@ class AITCMMSSystem:
 
             # Column widths optimized for landscape letter (10.5 inches usable)
             col_widths = [
-                0.85*inch,  # CM Number
-                0.85*inch,  # BFM
-                1.5*inch,   # Description
-                0.6*inch,   # Priority
-                0.85*inch,  # Assigned
-                0.6*inch,   # Status
-                0.8*inch,   # Created Date
-                0.8*inch,   # Closed Date
-                0.5*inch,   # Labor Hours
-                1.5*inch,   # Root Cause
-                1.5*inch    # Corrective Actions
+                1.5*inch,   # CM Number
+                6.5*inch,   # Description - much wider for content
+                1.5*inch    # Status
             ]
 
             # Create table
