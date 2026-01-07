@@ -13094,8 +13094,8 @@ class AITCMMSSystem:
                         # No date available, skip if filtering
                         continue
 
-                # Add to filtered data - only the 3 columns we want to display
-                filtered_data.append((cm_number, desc, status))
+                # Add to filtered data - include date opened and date closed
+                filtered_data.append((cm_number, desc, status, created, completion))
 
             if not filtered_data:
                 messagebox.showwarning("No Data", "No CM records match the current filters.")
@@ -13105,7 +13105,9 @@ class AITCMMSSystem:
             columns = [
                 'CM Number',
                 'Description',
-                'Status'
+                'Status',
+                'Date Opened',
+                'Date Closed'
             ]
 
             df = pd.DataFrame(filtered_data, columns=columns)
@@ -13264,6 +13266,24 @@ class AITCMMSSystem:
                     elif i == 1:  # Description - use Paragraph for word wrap
                         desc = sanitize_text_for_pdf(value)
                         cell_text = Paragraph(desc, cell_style)
+                    elif i in [3, 4]:  # Date Opened and Date Closed - format dates
+                        if value:
+                            # Try to format the date nicely
+                            date_str = str(value).split('.')[0]  # Remove microseconds if present
+                            # Try to parse and reformat
+                            try:
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y']:
+                                    try:
+                                        date_obj = datetime.strptime(date_str, fmt)
+                                        date_str = date_obj.strftime('%Y-%m-%d')
+                                        break
+                                    except ValueError:
+                                        continue
+                            except:
+                                pass
+                            cell_text = Paragraph(sanitize_text_for_pdf(date_str), cell_style)
+                        else:
+                            cell_text = Paragraph('', cell_style)
                     else:
                         # CM Number and Status - use Paragraph for consistent formatting
                         text = sanitize_text_for_pdf(value)
@@ -13275,9 +13295,11 @@ class AITCMMSSystem:
 
             # Column widths optimized for landscape letter (10.5 inches usable)
             col_widths = [
-                1.5*inch,   # CM Number
-                6.5*inch,   # Description - much wider for content
-                1.5*inch    # Status
+                1.0*inch,   # CM Number
+                4.5*inch,   # Description
+                1.0*inch,   # Status
+                1.2*inch,   # Date Opened
+                1.2*inch    # Date Closed
             ]
 
             # Create table
