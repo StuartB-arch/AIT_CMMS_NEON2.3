@@ -215,44 +215,61 @@ class MROStockManager:
         self.conn.commit()
         print("MRO inventory database initialized with performance indexes")
     
-    def create_mro_tab(self, notebook):
-        """Create MRO Stock Management tab"""
+    def create_mro_tab(self, notebook, readonly=False):
+        """Create MRO Stock Management tab
+
+        Args:
+            notebook: Parent notebook widget
+            readonly: If True, creates a read-only view (no add/edit/delete buttons)
+        """
         mro_frame = ttk.Frame(notebook)
-        notebook.add(mro_frame, text='MRO Stock')
-        
+        tab_text = 'MRO Stock (Read Only)' if readonly else 'MRO Stock'
+        notebook.add(mro_frame, text=tab_text)
+
         # Top controls frame
         controls_frame = ttk.LabelFrame(mro_frame, text="MRO Stock Controls", padding=10)
         controls_frame.pack(fill='x', padx=10, pady=5)
-        
+
         # Buttons row 1
         btn_frame1 = ttk.Frame(controls_frame)
         btn_frame1.pack(fill='x', pady=5)
-        
-        ttk.Button(btn_frame1, text="➕ Add New Part", 
-                  command=self.add_part_dialog, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame1, text="✏️ Edit Selected Part", 
-                  command=self.edit_selected_part, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame1, text="🗑️ Delete Selected Part", 
-                  command=self.delete_selected_part, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame1, text="📋 View Full Details", 
+
+        # Only show edit buttons if not readonly
+        if not readonly:
+            ttk.Button(btn_frame1, text="➕ Add New Part",
+                      command=self.add_part_dialog, width=20).pack(side='left', padx=5)
+            ttk.Button(btn_frame1, text="✏️ Edit Selected Part",
+                      command=self.edit_selected_part, width=20).pack(side='left', padx=5)
+            ttk.Button(btn_frame1, text="🗑️ Delete Selected Part",
+                      command=self.delete_selected_part, width=20).pack(side='left', padx=5)
+
+        # View and report buttons available in both modes
+        ttk.Button(btn_frame1, text="📋 View Full Details",
                   command=self.view_part_details, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame1, text="📊 Parts Usage Report", 
+        ttk.Button(btn_frame1, text="📊 Parts Usage Report",
                   command=self.show_parts_usage_report, width=20).pack(side='left', padx=5)
-        
+
         # Buttons row 2
         btn_frame2 = ttk.Frame(controls_frame)
         btn_frame2.pack(fill='x', pady=5)
-        
-        ttk.Button(btn_frame2, text="📥 Import from File", 
-                  command=self.import_from_file, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame2, text="📤 Export to CSV", 
+
+        # Import only available in edit mode
+        if not readonly:
+            ttk.Button(btn_frame2, text="📥 Import from File",
+                      command=self.import_from_file, width=20).pack(side='left', padx=5)
+
+        # Export and reports available in both modes
+        ttk.Button(btn_frame2, text="📤 Export to CSV",
                   command=self.export_to_csv, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame2, text="📊 Stock Report", 
+        ttk.Button(btn_frame2, text="📊 Stock Report",
                   command=self.generate_stock_report, width=20).pack(side='left', padx=5)
         ttk.Button(btn_frame2, text="⚠️ Low Stock Alert",
                   command=self.show_low_stock, width=20).pack(side='left', padx=5)
-        ttk.Button(btn_frame2, text="🔄 Migrate Photos to DB",
-                  command=self.migrate_photos_to_database, width=20).pack(side='left', padx=5)
+
+        # Migrate only available in edit mode
+        if not readonly:
+            ttk.Button(btn_frame2, text="🔄 Migrate Photos to DB",
+                      command=self.migrate_photos_to_database, width=20).pack(side='left', padx=5)
 
         # Search and filter frame
         search_frame = ttk.LabelFrame(mro_frame, text="Search & Filter", padding=10)

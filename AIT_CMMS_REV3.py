@@ -6,6 +6,7 @@ Fully functional CMMS with automatic PM scheduling, technician assignment, and c
 from datetime import datetime, timedelta
 from mro_stock_module import MROStockManager
 from cm_parts_integration import CMPartsIntegration
+from manuals_module import ManualsManager
 from database_utils import db_pool, UserManager, AuditLogger, OptimisticConcurrencyControl, TransactionManager
 from kpi_database_migration import migrate_kpi_database
 from kpi_manager import KPIManager
@@ -6879,6 +6880,7 @@ class AITCMMSSystem:
         # ===== Initialize PostgreSQL Database =====
         self.init_database()
         self.mro_manager = MROStockManager(self)
+        self.manuals_manager = ManualsManager(self)
         self.parts_integration = CMPartsIntegration(self)
         self.init_pm_templates_database()
 
@@ -10390,12 +10392,19 @@ class AITCMMSSystem:
         self.create_deactivated_tab()
         self.create_custom_pm_templates_tab()
         self.mro_manager.create_mro_tab(self.notebook)
+        self.manuals_manager.create_manuals_tab(self.notebook)
 
     def create_technician_tabs(self):
         """Create limited tabs for technician access"""
         # Only create CM Management tab for technicians
         self.create_cm_management_tab()
-    
+
+        # Add read-only MRO Stock tab for technicians
+        self.mro_manager.create_mro_tab(self.notebook, readonly=True)
+
+        # Add Manuals tab for technicians
+        self.manuals_manager.create_manuals_tab(self.notebook)
+
         # Add a simple info tab explaining their access
         self.create_technician_info_tab()
 
@@ -10415,15 +10424,23 @@ class AITCMMSSystem:
     - Complete Corrective Maintenance (CM) System
     - View ALL team CMs (everyone's entries)
     - Create new CMs
-    - Edit existing CMs  
+    - Edit existing CMs
     - Complete CMs
     - View CM history and status
+    - MRO Stock (Read-Only) - View parts inventory
+    - Equipment Manuals - Search, view, and print manuals/prints
 
     Team Collaboration:
     - You can see CMs created by all technicians
     - View work assigned to other team members
     - Complete CMs assigned to you or help with others
     - Full visibility of maintenance activities
+
+    New Features:
+    - MRO Stock tab: View parts inventory, check stock levels, export reports
+    - Manuals tab: Search equipment manuals by description, SAP, or BFM number
+    - Upload and access technical prints and documentation
+    - Print manuals directly from the system
 
     For additional system access or questions, please contact your manager.
 
@@ -10438,6 +10455,8 @@ class AITCMMSSystem:
     - Enter accurate dates when creating CMs
     - Provide detailed descriptions for better tracking
     - Update CM status when work is completed
+    - Check MRO Stock for parts availability
+    - Use Manuals tab to find equipment documentation
     - Coordinate with team members through CM system
     """
     
@@ -10455,10 +10474,11 @@ class AITCMMSSystem:
                 command=self.show_my_cms).pack(side='left', padx=10)
 
     def create_parts_coordinator_tabs(self):
-        """Create limited tabs for parts coordinator access - PM Completion and MRO Stock only"""
-        # Parts coordinator gets PM Completion and MRO Stock tabs only
+        """Create limited tabs for parts coordinator access - PM Completion, MRO Stock, and Manuals"""
+        # Parts coordinator gets PM Completion, MRO Stock, and Manuals tabs
         self.create_pm_completion_tab()
         self.mro_manager.create_mro_tab(self.notebook)
+        self.manuals_manager.create_manuals_tab(self.notebook)
 
         # Add an info tab explaining their access
         self.create_parts_coordinator_info_tab()
