@@ -439,11 +439,22 @@ class ManualsManager:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    manual_id, title, description, sap_num, bfm_num, equipment, \
-                    category, file_name, file_size, uploaded_by, upload_date, status = row
+                    # Access columns by name (RealDictCursor returns dict-like rows)
+                    manual_id = row['id']
+                    title = row['title']
+                    description = row['description']
+                    sap_num = row['sap_number']
+                    bfm_num = row['bfm_number']
+                    equipment = row['equipment_name']
+                    category = row['category']
+                    file_name = row['file_name']
+                    file_size = row['file_size']
+                    uploaded_by = row['uploaded_by']
+                    upload_date = row['upload_date']
+                    status = row['status']
 
                     # Format file size
-                    size_kb = f"{file_size / 1024:.1f}" if file_size else "0"
+                    size_kb = f"{int(file_size) / 1024:.1f}" if file_size else "0"
 
                     # Format date
                     date_str = upload_date.strftime('%Y-%m-%d %H:%M') if upload_date else ''
@@ -467,7 +478,7 @@ class ManualsManager:
 
                 # Update statistics
                 total_manuals = len(rows)
-                total_size = sum(row[8] for row in rows if row[8]) / (1024 * 1024)  # Convert to MB
+                total_size = sum(int(row['file_size']) for row in rows if row['file_size']) / (1024 * 1024)  # Convert to MB
 
                 self.manuals_stats_label.config(
                     text=f"Total Manuals: {total_manuals} | Total Size: {total_size:.2f} MB"
@@ -534,10 +545,21 @@ class ManualsManager:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    manual_id, title, description, sap_num, bfm_num, equipment, \
-                    category, file_name, file_size, uploaded_by, upload_date, status = row
+                    # Access columns by name (RealDictCursor returns dict-like rows)
+                    manual_id = row['id']
+                    title = row['title']
+                    description = row['description']
+                    sap_num = row['sap_number']
+                    bfm_num = row['bfm_number']
+                    equipment = row['equipment_name']
+                    category = row['category']
+                    file_name = row['file_name']
+                    file_size = row['file_size']
+                    uploaded_by = row['uploaded_by']
+                    upload_date = row['upload_date']
+                    status = row['status']
 
-                    size_kb = f"{file_size / 1024:.1f}" if file_size else "0"
+                    size_kb = f"{int(file_size) / 1024:.1f}" if file_size else "0"
                     date_str = upload_date.strftime('%Y-%m-%d %H:%M') if upload_date else ''
                     desc_display = (description[:50] + '...') if description and len(description) > 50 else (description or '')
 
@@ -557,7 +579,7 @@ class ManualsManager:
 
                 # Update statistics
                 total_manuals = len(rows)
-                total_size = sum(row[8] for row in rows if row[8]) / (1024 * 1024)
+                total_size = sum(int(row['file_size']) for row in rows if row['file_size']) / (1024 * 1024)
                 self.manuals_stats_label.config(
                     text=f"Filtered Results: {total_manuals} | Total Size: {total_size:.2f} MB"
                 )
@@ -588,7 +610,9 @@ class ManualsManager:
                     messagebox.showerror("Error", "Manual not found in database")
                     return
 
-                file_name, file_extension, file_data = row
+                file_name = row['file_name']
+                file_extension = row['file_extension']
+                file_data = row['file_data']
 
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
@@ -624,7 +648,9 @@ class ManualsManager:
                     messagebox.showerror("Error", "Manual not found in database")
                     return
 
-                file_name, file_extension, file_data = row
+                file_name = row['file_name']
+                file_extension = row['file_extension']
+                file_data = row['file_data']
 
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
@@ -662,7 +688,10 @@ class ManualsManager:
                     messagebox.showerror("Error", "Manual not found in database")
                     return
 
-                file_name, file_extension, file_data, title = row
+                file_name = row['file_name']
+                file_extension = row['file_extension']
+                file_data = row['file_data']
+                title = row['title']
 
                 # Ask user where to save
                 save_path = filedialog.asksaveasfilename(
@@ -705,7 +734,15 @@ class ManualsManager:
                     messagebox.showerror("Error", "Manual not found")
                     return
 
-                title, description, category, sap_num, bfm_num, equipment, tags, notes, status = row
+                title = row['title']
+                description = row['description']
+                category = row['category']
+                sap_num = row['sap_number']
+                bfm_num = row['bfm_number']
+                equipment = row['equipment_name']
+                tags = row['tags']
+                notes = row['notes']
+                status = row['status']
 
             # Create edit dialog
             dialog = tk.Toplevel(self.root)
