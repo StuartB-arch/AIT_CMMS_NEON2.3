@@ -10402,9 +10402,6 @@ class AITCMMSSystem:
         # Add read-only MRO Stock tab for technicians
         self.mro_manager.create_mro_tab(self.notebook, readonly=True)
 
-        # Add Manuals tab for technicians
-        self.manuals_manager.create_manuals_tab(self.notebook)
-
         # Add a simple info tab explaining their access
         self.create_technician_info_tab()
 
@@ -10428,7 +10425,6 @@ class AITCMMSSystem:
     - Complete CMs
     - View CM history and status
     - MRO Stock (Read-Only) - View parts inventory
-    - Equipment Manuals - Search, view, and print manuals/prints
 
     Team Collaboration:
     - You can see CMs created by all technicians
@@ -10438,9 +10434,8 @@ class AITCMMSSystem:
 
     New Features:
     - MRO Stock tab: View parts inventory, check stock levels, export reports
-    - Manuals tab: Search equipment manuals by description, SAP, or BFM number
-    - Upload and access technical prints and documentation
-    - Print manuals directly from the system
+    - Check parts availability before creating work orders
+    - View low stock alerts and usage reports
 
     For additional system access or questions, please contact your manager.
 
@@ -10456,7 +10451,6 @@ class AITCMMSSystem:
     - Provide detailed descriptions for better tracking
     - Update CM status when work is completed
     - Check MRO Stock for parts availability
-    - Use Manuals tab to find equipment documentation
     - Coordinate with team members through CM system
     """
     
