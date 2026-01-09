@@ -443,7 +443,7 @@ class ManualsManager:
                     category, file_name, file_size, uploaded_by, upload_date, status = row
 
                     # Format file size
-                    size_kb = f"{file_size / 1024:.1f}" if file_size else "0"
+                    size_kb = f"{int(file_size) / 1024:.1f}" if file_size else "0"
 
                     # Format date
                     date_str = upload_date.strftime('%Y-%m-%d %H:%M') if upload_date else ''
@@ -467,7 +467,7 @@ class ManualsManager:
 
                 # Update statistics
                 total_manuals = len(rows)
-                total_size = sum(row[8] for row in rows if row[8]) / (1024 * 1024)  # Convert to MB
+                total_size = sum(int(row[8]) for row in rows if row[8]) / (1024 * 1024)  # Convert to MB
 
                 self.manuals_stats_label.config(
                     text=f"Total Manuals: {total_manuals} | Total Size: {total_size:.2f} MB"
@@ -557,7 +557,7 @@ class ManualsManager:
 
                 # Update statistics
                 total_manuals = len(rows)
-                total_size = sum(row[8] for row in rows if row[8]) / (1024 * 1024)
+                total_size = sum(int(row[8]) for row in rows if row[8]) / (1024 * 1024)
                 self.manuals_stats_label.config(
                     text=f"Filtered Results: {total_manuals} | Total Size: {total_size:.2f} MB"
                 )
