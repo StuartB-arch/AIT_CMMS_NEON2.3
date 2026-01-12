@@ -869,13 +869,24 @@ class PMSchedulingService:
         return assignments
 
     def _load_equipment_with_priority(self) -> List[Equipment]:
-        """Load equipment from database with priority information"""
+        """Load equipment from database with priority information - EXCLUDES Cannot Find, Run to Failure, Deactivated, and equipment with no PM schedules"""
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT bfm_equipment_no, description, weekly_pm, monthly_pm, six_month_pm, annual_pm,
                    last_weekly_pm, last_monthly_pm, last_six_month_pm, last_annual_pm, status
             FROM equipment
-            WHERE status = 'Active'
+            WHERE (status = 'Active' OR status IS NULL)
+            AND status NOT IN ('Run to Failure', 'Missing')
+            AND bfm_equipment_no NOT IN (
+                SELECT DISTINCT bfm_equipment_no FROM cannot_find_assets WHERE status = 'Missing'
+            )
+            AND bfm_equipment_no NOT IN (
+                SELECT DISTINCT bfm_equipment_no FROM run_to_failure_assets
+            )
+            AND bfm_equipment_no NOT IN (
+                SELECT DISTINCT bfm_equipment_no FROM deactivated_assets
+            )
+            AND (weekly_pm = TRUE OR monthly_pm = TRUE OR six_month_pm = TRUE OR annual_pm = TRUE)
             ORDER BY bfm_equipment_no
         ''')
 

@@ -1035,7 +1035,7 @@ class PMSchedulingService:
             return {'success': False, 'error': str(e)}
     
     def _get_active_equipment(self) -> List[Equipment]:
-        """Get list of active equipment from database - EXCLUDES Cannot Find and Run to Failure"""
+        """Get list of active equipment from database - EXCLUDES Cannot Find, Run to Failure, Deactivated, and equipment with no PM schedules"""
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT bfm_equipment_no, description, weekly_pm, monthly_pm, six_month_pm, annual_pm,
@@ -1049,6 +1049,10 @@ class PMSchedulingService:
             AND bfm_equipment_no NOT IN (
                 SELECT DISTINCT bfm_equipment_no FROM run_to_failure_assets
             )
+            AND bfm_equipment_no NOT IN (
+                SELECT DISTINCT bfm_equipment_no FROM deactivated_assets
+            )
+            AND (weekly_pm = TRUE OR monthly_pm = TRUE OR six_month_pm = TRUE OR annual_pm = TRUE)
             ORDER BY bfm_equipment_no
         ''')
 
