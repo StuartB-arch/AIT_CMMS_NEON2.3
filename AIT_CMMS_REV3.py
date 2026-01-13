@@ -10844,6 +10844,15 @@ class AITCMMSSystem:
         # Bind KeyRelease event to trigger filtering as user types
         self.equipment_search_entry.bind('<KeyRelease>', self.filter_equipment_list)
 
+        # Status filter
+        ttk.Label(search_frame, text="Status:").pack(side='left', padx=(20, 5))
+        self.equipment_status_var = tk.StringVar(value="All Assets")
+        self.equipment_status_combo = ttk.Combobox(search_frame, textvariable=self.equipment_status_var,
+                                                    values=["All Assets", "ACTIVE", "INACTIVE"],
+                                                    width=12, state='readonly')
+        self.equipment_status_combo.pack(side='left', padx=5)
+        self.equipment_status_combo.bind('<<ComboboxSelected>>', self.filter_equipment_list)
+
         # Location filter
         ttk.Label(search_frame, text="Filter by Location:").pack(side='left', padx=(20, 5))
         self.equipment_location_var = tk.StringVar(value="All Locations")
@@ -20755,6 +20764,7 @@ class AITCMMSSystem:
 
             # Read filter values
             search_term = self.equipment_search_entry.get().strip() if hasattr(self, 'equipment_search_entry') else ''
+            selected_status = self.equipment_status_var.get() if hasattr(self, 'equipment_status_var') else "All Assets"
             selected_location = self.equipment_location_var.get() if hasattr(self, 'equipment_location_var') else "All Locations"
 
             # Get PM cycle filter states
@@ -20762,7 +20772,7 @@ class AITCMMSSystem:
             six_month_filter = self.six_month_pm_filter_var.get() if hasattr(self, 'six_month_pm_filter_var') else False
             annual_filter = self.annual_pm_filter_var.get() if hasattr(self, 'annual_pm_filter_var') else False
 
-            print(f"DEBUG: Search term: '{search_term}', Location: '{selected_location}', PM Filters: Monthly={monthly_filter}, 6-Month={six_month_filter}, Annual={annual_filter}")
+            print(f"DEBUG: Search term: '{search_term}', Status: '{selected_status}', Location: '{selected_location}', PM Filters: Monthly={monthly_filter}, 6-Month={six_month_filter}, Annual={annual_filter}")
 
             # Reset pagination when filters change
             if reset:
@@ -20774,17 +20784,40 @@ class AITCMMSSystem:
 
             cursor = self.conn.cursor()
 
-            # Build SQL query with filters - OPTIMIZED: Use LEFT JOIN instead of NOT IN subqueries
+            # Build SQL query with filters - Show ALL assets with calculated ACTIVE/INACTIVE status
             query = '''
                 SELECT e.sap_material_no, e.bfm_equipment_no, e.description, e.location, e.master_lin,
-                       e.monthly_pm, e.six_month_pm, e.annual_pm, e.status
+                       e.monthly_pm, e.six_month_pm, e.annual_pm, e.status,
+                       CASE
+                           WHEN d.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
+                           WHEN c.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
+                           WHEN r.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
+                           WHEN e.status IN ('Run to Failure', 'Missing', 'Deactivated') THEN 'INACTIVE'
+                           ELSE 'ACTIVE'
+                       END as calculated_status
                 FROM equipment e
-                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
-                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
-                WHERE d.bfm_equipment_no IS NULL
-                AND c.bfm_equipment_no IS NULL
+                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no
+                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no
+                LEFT JOIN run_to_failure_assets r ON e.bfm_equipment_no = r.bfm_equipment_no
+                WHERE 1=1
             '''
             params = []
+
+            # Status filter (ACTIVE/INACTIVE)
+            if selected_status == "ACTIVE":
+                query += '''
+                    AND d.bfm_equipment_no IS NULL
+                    AND c.bfm_equipment_no IS NULL
+                    AND r.bfm_equipment_no IS NULL
+                    AND (e.status NOT IN ('Run to Failure', 'Missing', 'Deactivated') OR e.status IS NULL)
+                '''
+            elif selected_status == "INACTIVE":
+                query += '''
+                    AND (d.bfm_equipment_no IS NOT NULL
+                         OR c.bfm_equipment_no IS NOT NULL
+                         OR r.bfm_equipment_no IS NOT NULL
+                         OR e.status IN ('Run to Failure', 'Missing', 'Deactivated'))
+                '''
 
             # Location filter
             if selected_location != "All Locations":
@@ -20820,13 +20853,30 @@ class AITCMMSSystem:
                 count_query = '''
                     SELECT COUNT(DISTINCT e.bfm_equipment_no)
                     FROM equipment e
-                    LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
-                    LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
-                    WHERE d.bfm_equipment_no IS NULL
-                    AND c.bfm_equipment_no IS NULL
+                    LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no
+                    LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no
+                    LEFT JOIN run_to_failure_assets r ON e.bfm_equipment_no = r.bfm_equipment_no
+                    WHERE 1=1
                 '''
                 # Add same filters as main query
                 count_params = []
+
+                # Status filter
+                if selected_status == "ACTIVE":
+                    count_query += '''
+                        AND d.bfm_equipment_no IS NULL
+                        AND c.bfm_equipment_no IS NULL
+                        AND r.bfm_equipment_no IS NULL
+                        AND (e.status NOT IN ('Run to Failure', 'Missing', 'Deactivated') OR e.status IS NULL)
+                    '''
+                elif selected_status == "INACTIVE":
+                    count_query += '''
+                        AND (d.bfm_equipment_no IS NOT NULL
+                             OR c.bfm_equipment_no IS NOT NULL
+                             OR r.bfm_equipment_no IS NOT NULL
+                             OR e.status IN ('Run to Failure', 'Missing', 'Deactivated'))
+                    '''
+
                 if selected_location != "All Locations":
                     count_query += " AND e.location = %s"
                     count_params.append(selected_location)
@@ -20862,7 +20912,7 @@ class AITCMMSSystem:
             # Display results (append to existing if loading more)
             records_added = 0
             for idx, equipment in enumerate(cursor.fetchall()):
-                sap, bfm, desc, location, master_lin, monthly_pm, six_month_pm, annual_pm, status = equipment
+                sap, bfm, desc, location, master_lin, monthly_pm, six_month_pm, annual_pm, status, calculated_status = equipment
 
                 self.equipment_tree.insert('', 'end', values=(
                     sap or '',
@@ -20873,7 +20923,7 @@ class AITCMMSSystem:
                     'Yes' if monthly_pm else 'No',
                     'Yes' if six_month_pm else 'No',
                     'Yes' if annual_pm else 'No',
-                    status or 'Active'
+                    calculated_status or 'ACTIVE'
                 ))
                 records_added += 1
 
@@ -20944,6 +20994,7 @@ class AITCMMSSystem:
         if hasattr(self, 'equipment_search_entry'):
             self.equipment_search_entry.delete(0, 'end')
         self.equipment_search_var.set('')
+        self.equipment_status_var.set("All Assets")
         self.equipment_location_var.set("All Locations")
 
         # Clear PM cycle filters
