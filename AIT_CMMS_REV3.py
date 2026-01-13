@@ -20785,6 +20785,7 @@ class AITCMMSSystem:
             cursor = self.conn.cursor()
 
             # Build SQL query with filters - Show ALL assets with calculated ACTIVE/INACTIVE status
+            # IMPORTANT: Only check status fields in tracking tables to avoid marking found/reactivated assets as inactive
             query = '''
                 SELECT e.sap_material_no, e.bfm_equipment_no, e.description, e.location, e.master_lin,
                        e.monthly_pm, e.six_month_pm, e.annual_pm, e.status,
@@ -20796,8 +20797,8 @@ class AITCMMSSystem:
                            ELSE 'ACTIVE'
                        END as calculated_status
                 FROM equipment e
-                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no
-                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no
+                LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
+                LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
                 LEFT JOIN run_to_failure_assets r ON e.bfm_equipment_no = r.bfm_equipment_no
                 WHERE 1=1
             '''
@@ -20853,8 +20854,8 @@ class AITCMMSSystem:
                 count_query = '''
                     SELECT COUNT(DISTINCT e.bfm_equipment_no)
                     FROM equipment e
-                    LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no
-                    LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no
+                    LEFT JOIN deactivated_assets d ON e.bfm_equipment_no = d.bfm_equipment_no AND d.status = 'Deactivated'
+                    LEFT JOIN cannot_find_assets c ON e.bfm_equipment_no = c.bfm_equipment_no AND c.status = 'Missing'
                     LEFT JOIN run_to_failure_assets r ON e.bfm_equipment_no = r.bfm_equipment_no
                     WHERE 1=1
                 '''
