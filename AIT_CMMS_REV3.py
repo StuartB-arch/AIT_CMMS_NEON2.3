@@ -20785,11 +20785,16 @@ class AITCMMSSystem:
             cursor = self.conn.cursor()
 
             # Build SQL query with filters - Show ALL assets with calculated ACTIVE/INACTIVE status
-            # IMPORTANT: Only check status fields in tracking tables to avoid marking found/reactivated assets as inactive
+            # ACTIVE = Must have at least ONE PM schedule enabled (weekly OR monthly OR 6-month OR annual)
+            # INACTIVE = No PM schedules OR in tracking tables OR bad status
             query = '''
                 SELECT e.sap_material_no, e.bfm_equipment_no, e.description, e.location, e.master_lin,
                        e.monthly_pm, e.six_month_pm, e.annual_pm, e.status,
                        CASE
+                           WHEN (COALESCE(e.weekly_pm, FALSE) = FALSE
+                                 AND COALESCE(e.monthly_pm, FALSE) = FALSE
+                                 AND COALESCE(e.six_month_pm, FALSE) = FALSE
+                                 AND COALESCE(e.annual_pm, FALSE) = FALSE) THEN 'INACTIVE'
                            WHEN d.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
                            WHEN c.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
                            WHEN r.bfm_equipment_no IS NOT NULL THEN 'INACTIVE'
@@ -20807,6 +20812,7 @@ class AITCMMSSystem:
             # Status filter (ACTIVE/INACTIVE)
             if selected_status == "ACTIVE":
                 query += '''
+                    AND (e.weekly_pm = TRUE OR e.monthly_pm = TRUE OR e.six_month_pm = TRUE OR e.annual_pm = TRUE)
                     AND d.bfm_equipment_no IS NULL
                     AND c.bfm_equipment_no IS NULL
                     AND r.bfm_equipment_no IS NULL
@@ -20814,7 +20820,11 @@ class AITCMMSSystem:
                 '''
             elif selected_status == "INACTIVE":
                 query += '''
-                    AND (d.bfm_equipment_no IS NOT NULL
+                    AND ((COALESCE(e.weekly_pm, FALSE) = FALSE
+                          AND COALESCE(e.monthly_pm, FALSE) = FALSE
+                          AND COALESCE(e.six_month_pm, FALSE) = FALSE
+                          AND COALESCE(e.annual_pm, FALSE) = FALSE)
+                         OR d.bfm_equipment_no IS NOT NULL
                          OR c.bfm_equipment_no IS NOT NULL
                          OR r.bfm_equipment_no IS NOT NULL
                          OR e.status IN ('Run to Failure', 'Missing', 'Deactivated'))
@@ -20865,6 +20875,7 @@ class AITCMMSSystem:
                 # Status filter
                 if selected_status == "ACTIVE":
                     count_query += '''
+                        AND (e.weekly_pm = TRUE OR e.monthly_pm = TRUE OR e.six_month_pm = TRUE OR e.annual_pm = TRUE)
                         AND d.bfm_equipment_no IS NULL
                         AND c.bfm_equipment_no IS NULL
                         AND r.bfm_equipment_no IS NULL
@@ -20872,7 +20883,11 @@ class AITCMMSSystem:
                     '''
                 elif selected_status == "INACTIVE":
                     count_query += '''
-                        AND (d.bfm_equipment_no IS NOT NULL
+                        AND ((COALESCE(e.weekly_pm, FALSE) = FALSE
+                              AND COALESCE(e.monthly_pm, FALSE) = FALSE
+                              AND COALESCE(e.six_month_pm, FALSE) = FALSE
+                              AND COALESCE(e.annual_pm, FALSE) = FALSE)
+                             OR d.bfm_equipment_no IS NOT NULL
                              OR c.bfm_equipment_no IS NOT NULL
                              OR r.bfm_equipment_no IS NOT NULL
                              OR e.status IN ('Run to Failure', 'Missing', 'Deactivated'))
