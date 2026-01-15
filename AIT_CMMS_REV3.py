@@ -2527,6 +2527,16 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         log_debug(f"Starting PDF generation for month={month}, year={year}")
         log_debug(f"Log file location: {debug_log_path}")
 
+        # Helper function to safely convert any value to string for tables
+        def safe_str(value, default='N/A'):
+            """Safely convert any value to string, handling None and other types"""
+            if value is None:
+                return default
+            try:
+                return str(value)
+            except:
+                return default
+
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -2755,7 +2765,15 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         ''', (year, month))
         found_assets = cursor.fetchall()
         
-        # Summary highlights table
+        # Summary highlights table  - ensure all values are safe
+        pm_completions = pm_completions if pm_completions is not None else 0
+        outstanding_completions = outstanding_completions if outstanding_completions is not None else 0
+        pm_total_hours = pm_total_hours if pm_total_hours is not None else 0.0
+        outstanding_total_hours = outstanding_total_hours if outstanding_total_hours is not None else 0.0
+        pm_avg_hours = pm_avg_hours if pm_avg_hours is not None else 0.0
+        cms_created = cms_created if cms_created is not None else 0
+        cms_closed = cms_closed if cms_closed is not None else 0
+
         summary_data = [
             ['METRIC', 'VALUE'],
             ['PM Completions (Assigned & Completed This Month)', f'{pm_completions:,}'],
