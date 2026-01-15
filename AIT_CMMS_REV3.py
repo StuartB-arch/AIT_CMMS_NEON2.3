@@ -2501,10 +2501,10 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         import traceback
         from tkinter import messagebox
 
-        # Create debug log file in user's home directory (guaranteed to work)
+        # Create debug log file on user's desktop (easy to find)
         try:
-            log_dir = os.path.expanduser("~")
-            debug_log_path = os.path.join(log_dir, "cmms_pdf_debug.log")
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            debug_log_path = os.path.join(desktop, "cmms_pdf_debug.log")
         except:
             debug_log_path = "C:\\cmms_pdf_debug.log"
 
@@ -4803,9 +4803,10 @@ class AITCMMSSystem:
                     import sys
                     import os
 
-                    # Determine log file location
+                    # Determine log file location (same as in main function)
                     try:
-                        log_path = os.path.join(os.path.expanduser("~"), "cmms_pdf_debug.log")
+                        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+                        log_path = os.path.join(desktop, "cmms_pdf_debug.log")
                     except:
                         log_path = "C:\\cmms_pdf_debug.log"
 
