@@ -2810,23 +2810,24 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         story.append(Spacer(1, 25))
 
         # ==================== OUTSTANDING PM COMPLETIONS DETAIL ====================
-        if outstanding_completions > 0:
-            story.append(Paragraph(f"OUTSTANDING PM COMPLETIONS", heading_style))
-            story.append(Paragraph(f"PMs Assigned Before {month_name} but Completed in {month_name}", subheading_style))
-            story.append(Spacer(1, 10))
+        try:
+            if outstanding_completions > 0:
+                story.append(Paragraph(f"OUTSTANDING PM COMPLETIONS", heading_style))
+                story.append(Paragraph(f"PMs Assigned Before {month_name} but Completed in {month_name}", subheading_style))
+                story.append(Spacer(1, 10))
 
-            # Get detailed outstanding PM data
-            cursor.execute('''
-                SELECT
-                    bfm_equipment_no,
-                    pm_type,
-                    pm_due_date,
-                    completion_date,
-                    technician_name,
-                    labor_hours,
-                    labor_minutes
-                FROM pm_completions
-                WHERE EXTRACT(YEAR FROM completion_date::date) = %s
+                # Get detailed outstanding PM data
+                cursor.execute('''
+                    SELECT
+                        bfm_equipment_no,
+                        pm_type,
+                        pm_due_date,
+                        completion_date,
+                        technician_name,
+                        labor_hours,
+                        labor_minutes
+                    FROM pm_completions
+                    WHERE EXTRACT(YEAR FROM completion_date::date) = %s
                 AND EXTRACT(MONTH FROM completion_date::date) = %s
                 AND (
                     pm_due_date IS NULL
@@ -3843,27 +3844,43 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         # ==================== BUILD PDF ====================
         log_debug(f"About to build PDF with {len(story)} story elements")
 
+        # Show message box to confirm we got this far
+        from tkinter import messagebox as mb
+        mb.showinfo("Debug Info", f"About to build PDF with {len(story)} elements.\n\nIf error occurs after this, the problem is during PDF rendering.")
+
         try:
             doc.build(story)
             log_debug("PDF built successfully!")
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+
             log_debug(f"\nERROR: Failed to build PDF for {month_name} {year}")
             log_debug(f"Error type: {type(e).__name__}")
             log_debug(f"Error message: {str(e)}")
             log_debug(f"Story has {len(story)} elements")
-
-            # Log full traceback
             log_debug("\nFull traceback:")
-            log_debug(traceback.format_exc())
+            log_debug(error_details)
 
             # Try to identify which element is causing the issue
             log_debug("\nAttempting to identify problematic element...")
+            problematic_elements = []
             for i, element in enumerate(story):
                 try:
                     # Try to convert element to string to check for None values
                     str(element)
                 except Exception as elem_error:
                     log_debug(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}")
+                    problematic_elements.append(f"Element {i}: {type(element).__name__}")
+
+            # Show detailed error in message box
+            error_msg = f"Failed to generate report: {str(e)}\n\n"
+            error_msg += f"Story has {len(story)} elements\n"
+            if problematic_elements:
+                error_msg += f"\nProblematic elements:\n" + "\n".join(problematic_elements[:5])
+            error_msg += f"\n\nError type: {type(e).__name__}"
+
+            mb.showerror("PDF Build Error", error_msg)
 
             raise Exception(f"Failed to generate report: {str(e)}")
 
