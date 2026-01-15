@@ -4758,6 +4758,15 @@ class AITCMMSSystem:
                             os.system(f'xdg-open "{filename}"')
                 
                 except Exception as e:
+                    import traceback
+                    print("\n" + "="*80)
+                    print(f"ERROR: Failed to generate PDF report for {month}/{year}")
+                    print("="*80)
+                    print(f"Error type: {type(e).__name__}")
+                    print(f"Error message: {str(e)}")
+                    print("\nFull traceback:")
+                    traceback.print_exc()
+                    print("="*80 + "\n")
                     messagebox.showerror("Error", f"Failed to generate PDF report:\n\n{str(e)}")
         
             # ========== NOW CREATE THE BUTTONS ==========
