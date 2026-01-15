@@ -2497,9 +2497,25 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         Generate a professional monthly report PDF
         """
         import sys
-        print("\n" + "="*80, flush=True)
-        print(f"DEBUG: Starting PDF generation for month={month}, year={year}", flush=True)
-        sys.stdout.flush()
+        import os
+        import traceback
+
+        # Create debug log file
+        debug_log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pdf_debug.log")
+
+        def log_debug(msg):
+            """Write debug message to file"""
+            try:
+                with open(debug_log_path, "a", encoding='utf-8') as f:
+                    from datetime import datetime as dt
+                    timestamp = dt.now().strftime('%Y-%m-%d %H:%M:%S')
+                    f.write(f"[{timestamp}] {msg}\n")
+                    f.flush()
+            except:
+                pass
+
+        log_debug("\n" + "="*80)
+        log_debug(f"Starting PDF generation for month={month}, year={year}")
 
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
@@ -2525,8 +2541,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
 
         month_name = calendar.month_name[month]
 
-        print(f"DEBUG: Processing report for {month_name} {year}", flush=True)
-        sys.stdout.flush()
+        log_debug(f"Processing report for {month_name} {year}")
 
         # Create PDF filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3798,34 +3813,33 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ))
 
         # ==================== BUILD PDF ====================
-        print(f"DEBUG: About to build PDF with {len(story)} story elements", flush=True)
-        sys.stdout.flush()
+        log_debug(f"About to build PDF with {len(story)} story elements")
 
         try:
             doc.build(story)
-            print(f"DEBUG: PDF built successfully!", flush=True)
-            sys.stdout.flush()
+            log_debug("PDF built successfully!")
         except Exception as e:
-            print(f"\nERROR: Failed to build PDF for {month_name} {year}", flush=True)
-            print(f"Error type: {type(e).__name__}", flush=True)
-            print(f"Error message: {str(e)}", flush=True)
-            print(f"Story has {len(story)} elements", flush=True)
-            sys.stdout.flush()
+            log_debug(f"\nERROR: Failed to build PDF for {month_name} {year}")
+            log_debug(f"Error type: {type(e).__name__}")
+            log_debug(f"Error message: {str(e)}")
+            log_debug(f"Story has {len(story)} elements")
+
+            # Log full traceback
+            log_debug("\nFull traceback:")
+            log_debug(traceback.format_exc())
 
             # Try to identify which element is causing the issue
-            print("\nAttempting to identify problematic element...", flush=True)
+            log_debug("\nAttempting to identify problematic element...")
             for i, element in enumerate(story):
                 try:
                     # Try to convert element to string to check for None values
                     str(element)
                 except Exception as elem_error:
-                    print(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}", flush=True)
-            sys.stdout.flush()
+                    log_debug(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}")
 
             raise Exception(f"Failed to generate report: {str(e)}")
 
-        print(f"DEBUG: Returning filename: {filename}", flush=True)
-        sys.stdout.flush()
+        log_debug(f"Returning filename: {filename}")
         return filename   
 
 
