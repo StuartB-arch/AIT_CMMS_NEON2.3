@@ -2036,7 +2036,8 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         for date, count, hours in daily_data:
             running_total += count
             hours_display = f"{hours:.1f}h" if hours else "0.0h"
-            print(f"{date:<12} {count:<15} {hours_display:<12} {running_total:<15}")
+            date_display = str(date) if date else 'N/A'
+            print(f"{date_display:<12} {count:<15} {hours_display:<12} {running_total:<15}")
         print()
     
     # 4. TECHNICIAN PERFORMANCE (PM Completions only)
@@ -3608,7 +3609,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             for date, count, hours in daily_data_raw:
                 running_total += count
                 daily_data.append([
-                    date,
+                    str(date) if date else 'N/A',
                     str(count),
                     f'{hours:.1f}' if hours else '0.0',
                     str(running_total)
@@ -5186,7 +5187,8 @@ class AITCMMSSystem:
                         preview_info += "RECENT PM ACTIVITY:\n"
                         preview_info += "-" * 40 + "\n"
                         for date, count in pm_dates:
-                            preview_info += f"{date}: {count} PM completions\n"
+                            date_display = str(date) if date else 'N/A'
+                            preview_info += f"{date_display}: {count} PM completions\n"
                         preview_info += "\n"
                 except:
                     pass
@@ -17665,7 +17667,8 @@ class AITCMMSSystem:
             
                 for month, completions, avg_hours in monthly_trends:
                     avg_hours_display = f"{avg_hours:.1f}h" if avg_hours else "0.0h"
-                    analytics += f"{month:<10} {completions:<12} {avg_hours_display:<12}\n"
+                    month_display = month if month else 'N/A'
+                    analytics += f"{month_display:<10} {completions:<12} {avg_hours_display:<12}\n"
                 analytics += "\n"
         
             # Equipment with overdue PMs
