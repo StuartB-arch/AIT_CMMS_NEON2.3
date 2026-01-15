@@ -1605,6 +1605,10 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         for cm_data in closed_cms:
             cm_number, created_date, completion_date, technician, equipment, description, priority, days, root_cause, corrective_action = cm_data
 
+            # Handle NULL cm_number and days
+            cm_number_str = str(cm_number) if cm_number else "N/A"
+            days_str = f"{days} days" if days is not None else "N/A"
+
             # Format dates - handle both string and datetime objects
             if created_date:
                 created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
@@ -1621,13 +1625,13 @@ def generate_monthly_summary_report(conn, month=None, year=None):
             desc_str = (description[:60] + "...") if description and len(description) > 60 else (description or "No description")
             priority_str = priority if priority else "N/A"
 
-            print(f"CM Number: {cm_number}")
+            print(f"CM Number: {cm_number_str}")
             print(f"  Priority: {priority_str}")
             print(f"  Equipment: {equip_str}")
             print(f"  Description: {desc_str}")
             print(f"  Date Created: {created_str}")
             print(f"  Date Closed: {completed_str}")
-            print(f"  Days to Close: {days} days ({completed_str} - {created_str})")
+            print(f"  Days to Close: {days_str} ({completed_str} - {created_str})")
             print(f"  Technician: {tech_name}")
 
             # Display root cause and corrective action
@@ -1759,6 +1763,10 @@ def generate_monthly_summary_report(conn, month=None, year=None):
         for cm_data in open_cms:
             cm_number, created_date, technician, equipment, description, priority, days_open = cm_data
 
+            # Handle NULL cm_number and days_open
+            cm_number_str = str(cm_number) if cm_number else "N/A"
+            days_open_str = f"{days_open} days" if days_open is not None else "N/A"
+
             # Format dates - handle both string and datetime objects
             if created_date:
                 created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
@@ -1771,12 +1779,12 @@ def generate_monthly_summary_report(conn, month=None, year=None):
             desc_str = (description[:60] + "...") if description and len(description) > 60 else (description or "No description")
             priority_str = priority if priority else "N/A"
 
-            print(f"CM Number: {cm_number}")
+            print(f"CM Number: {cm_number_str}")
             print(f"  Priority: {priority_str}")
             print(f"  Equipment: {equip_str}")
             print(f"  Description: {desc_str}")
             print(f"  Date Created: {created_str}")
-            print(f"  Days Open: {days_open} days (as of {current_date_str})")
+            print(f"  Days Open: {days_open_str} (as of {current_date_str})")
             print(f"  Technician: {tech_name}")
 
             # Get MRO stock items used for this CM (if any parts were already consumed during work)
@@ -3078,6 +3086,9 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             for cm_data in closed_cms:
                 cm_number, created_date, completion_date, technician, equipment, description, priority, days = cm_data
 
+                # Handle NULL cm_number
+                cm_number_str = str(cm_number) if cm_number else "N/A"
+
                 # Format dates - handle both string and datetime objects
                 if created_date:
                     created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
@@ -3089,6 +3100,9 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                 else:
                     completed_str = "Unknown"
 
+                # Handle NULL days_to_close
+                days_str = f'{days} days' if days is not None else 'N/A'
+
                 tech_name = technician if technician else "Unassigned"
                 equip_str = equipment if equipment else "N/A"
                 desc_str = (description[:80] + "...") if description and len(description) > 80 else (description or "No description")
@@ -3096,7 +3110,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
 
                 # CM Header with key info
                 story.append(Paragraph(
-                    f"<b>CM Number: {cm_number}</b>",
+                    f"<b>CM Number: {cm_number_str}</b>",
                     ParagraphStyle('CMHeader', parent=body_style, fontSize=11, textColor=colors.HexColor('#2c5282'), spaceAfter=4)
                 ))
 
@@ -3107,7 +3121,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                     ['Description:', desc_str],
                     ['Date Created:', created_str],
                     ['Date Closed:', completed_str],
-                    ['Days to Close:', f'{days} days ({completed_str} - {created_str})'],
+                    ['Days to Close:', f'{days_str} ({completed_str} - {created_str})'],
                     ['Technician:', tech_name]
                 ]
 
@@ -3294,13 +3308,19 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             for cm_data in open_cms:
                 cm_number, created_date, technician, equipment, description, priority, days_open = cm_data
 
+                # Handle NULL cm_number
+                cm_number_str = str(cm_number) if cm_number else "N/A"
+
                 # Format dates - handle both string and datetime objects
                 if created_date:
                     created_str = created_date.strftime('%Y-%m-%d') if hasattr(created_date, 'strftime') else str(created_date)[:10]
                 else:
                     created_str = "Unknown"
 
+                # Handle NULL days_open
                 current_date_str = datetime.now().strftime('%Y-%m-%d')
+                days_open_str = f'{days_open} days (as of {current_date_str})' if days_open is not None else 'N/A'
+
                 tech_name = technician if technician else "Unassigned"
                 equip_str = equipment if equipment else "N/A"
                 desc_str = (description[:80] + "...") if description and len(description) > 80 else (description or "No description")
@@ -3308,7 +3328,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
 
                 # CM Header with key info
                 story.append(Paragraph(
-                    f"<b>CM Number: {cm_number}</b>",
+                    f"<b>CM Number: {cm_number_str}</b>",
                     ParagraphStyle('CMHeader', parent=body_style, fontSize=11, textColor=colors.HexColor('#2c5282'), spaceAfter=4)
                 ))
 
@@ -3318,7 +3338,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                     ['Equipment:', equip_str],
                     ['Description:', desc_str],
                     ['Date Created:', created_str],
-                    ['Days Open:', f'{days_open} days (as of {current_date_str})'],
+                    ['Days Open:', days_open_str],
                     ['Technician:', tech_name]
                 ]
 
