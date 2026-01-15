@@ -3157,6 +3157,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                     total_cm_cost = 0.0
 
                     for part_number, name, qty, unit_price, total_cost, uom in parts_used:
+                        part_num_str = str(part_number) if part_number else "N/A"
                         part_name = name if name else "Unknown Part"
                         quantity = qty if qty else 0
                         price = unit_price if unit_price else 0.0
@@ -3165,7 +3166,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                         unit = uom if uom else "EA"
 
                         parts_table_data.append([
-                            part_number,
+                            part_num_str,
                             part_name[:30] + "..." if len(part_name) > 30 else part_name,
                             f'{quantity} {unit}',
                             f'${price:.2f}',
@@ -3235,11 +3236,12 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             cm_detail_data = [['CM Number', 'Equipment', 'Created', 'Closed', 'Technician']]
         
             for cm_number, bfm, created, completed, tech in old_cms:
+                cm_number_str = str(cm_number) if cm_number else "N/A"
                 created_short = str(created)[:10] if created else "N/A"
                 completed_short = str(completed)[:10] if completed else "N/A"
                 bfm_short = (bfm[:12] + '...' if len(str(bfm)) > 12 else bfm) if bfm else "N/A"
                 tech_short = (tech[:15] + '...' if len(str(tech)) > 15 else tech) if tech else "Unassigned"
-                cm_detail_data.append([cm_number, bfm_short, created_short, completed_short, tech_short])
+                cm_detail_data.append([cm_number_str, bfm_short, created_short, completed_short, tech_short])
         
             cm_detail_table = Table(cm_detail_data, colWidths=[1.1*inch, 1.3*inch, 1.1*inch, 1.1*inch, 1.4*inch])
             cm_detail_table.setStyle(TableStyle([
@@ -3366,6 +3368,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                     total_cm_cost = 0.0
 
                     for part_number, name, qty, unit_price, total_cost, uom in parts_used:
+                        part_num_str = str(part_number) if part_number else "N/A"
                         part_name = name if name else "Unknown Part"
                         quantity = qty if qty else 0
                         price = unit_price if unit_price else 0.0
@@ -3374,7 +3377,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                         unit = uom if uom else "EA"
 
                         parts_table_data.append([
-                            part_number,
+                            part_num_str,
                             part_name[:30] + "..." if len(part_name) > 30 else part_name,
                             f'{quantity} {unit}',
                             f'${price:.2f}',
@@ -3457,7 +3460,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
 
             for priority, count, total_hrs, avg_hrs in cm_priorities:
                 cm_priority_data.append([
-                    priority,
+                    str(priority) if priority else 'N/A',
                     str(count),
                     f'{total_hrs:.1f}' if total_hrs else '0.0',
                     f'{avg_hrs:.1f}' if avg_hrs else '0.0'
@@ -3559,7 +3562,7 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         
             for pm_type, count, total_hrs, avg_hrs in pm_types:
                 pm_type_data.append([
-                    pm_type,
+                    str(pm_type) if pm_type else 'N/A',
                     str(count),
                     f'{total_hrs:.1f}' if total_hrs else '0.0',
                     f'{avg_hrs:.1f}' if avg_hrs else '0.0'
