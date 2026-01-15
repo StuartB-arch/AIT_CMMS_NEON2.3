@@ -2496,6 +2496,11 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         """
         Generate a professional monthly report PDF
         """
+        import sys
+        print("\n" + "="*80, flush=True)
+        print(f"DEBUG: Starting PDF generation for month={month}, year={year}", flush=True)
+        sys.stdout.flush()
+
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -2519,6 +2524,9 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             year = year or now.year
 
         month_name = calendar.month_name[month]
+
+        print(f"DEBUG: Processing report for {month_name} {year}", flush=True)
+        sys.stdout.flush()
 
         # Create PDF filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3790,25 +3798,34 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ))
 
         # ==================== BUILD PDF ====================
+        print(f"DEBUG: About to build PDF with {len(story)} story elements", flush=True)
+        sys.stdout.flush()
+
         try:
             doc.build(story)
+            print(f"DEBUG: PDF built successfully!", flush=True)
+            sys.stdout.flush()
         except Exception as e:
-            print(f"ERROR: Failed to build PDF for {month_name} {year}")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print(f"Story has {len(story)} elements")
+            print(f"\nERROR: Failed to build PDF for {month_name} {year}", flush=True)
+            print(f"Error type: {type(e).__name__}", flush=True)
+            print(f"Error message: {str(e)}", flush=True)
+            print(f"Story has {len(story)} elements", flush=True)
+            sys.stdout.flush()
 
             # Try to identify which element is causing the issue
-            print("\nAttempting to identify problematic element...")
+            print("\nAttempting to identify problematic element...", flush=True)
             for i, element in enumerate(story):
                 try:
                     # Try to convert element to string to check for None values
                     str(element)
                 except Exception as elem_error:
-                    print(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}")
+                    print(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}", flush=True)
+            sys.stdout.flush()
 
             raise Exception(f"Failed to generate report: {str(e)}")
 
+        print(f"DEBUG: Returning filename: {filename}", flush=True)
+        sys.stdout.flush()
         return filename   
 
 
@@ -4759,14 +4776,17 @@ class AITCMMSSystem:
                 
                 except Exception as e:
                     import traceback
-                    print("\n" + "="*80)
-                    print(f"ERROR: Failed to generate PDF report for {month}/{year}")
-                    print("="*80)
-                    print(f"Error type: {type(e).__name__}")
-                    print(f"Error message: {str(e)}")
-                    print("\nFull traceback:")
+                    import sys
+                    print("\n" + "="*80, flush=True)
+                    print(f"ERROR: Failed to generate PDF report for {month}/{year}", flush=True)
+                    print("="*80, flush=True)
+                    print(f"Error type: {type(e).__name__}", flush=True)
+                    print(f"Error message: {str(e)}", flush=True)
+                    print("\nFull traceback:", flush=True)
+                    sys.stdout.flush()
                     traceback.print_exc()
-                    print("="*80 + "\n")
+                    sys.stdout.flush()
+                    print("="*80 + "\n", flush=True)
                     messagebox.showerror("Error", f"Failed to generate PDF report:\n\n{str(e)}")
         
             # ========== NOW CREATE THE BUTTONS ==========
