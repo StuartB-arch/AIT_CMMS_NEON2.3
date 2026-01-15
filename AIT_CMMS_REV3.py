@@ -3790,8 +3790,25 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
             ))
 
         # ==================== BUILD PDF ====================
-        doc.build(story)
-    
+        try:
+            doc.build(story)
+        except Exception as e:
+            print(f"ERROR: Failed to build PDF for {month_name} {year}")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            print(f"Story has {len(story)} elements")
+
+            # Try to identify which element is causing the issue
+            print("\nAttempting to identify problematic element...")
+            for i, element in enumerate(story):
+                try:
+                    # Try to convert element to string to check for None values
+                    str(element)
+                except Exception as elem_error:
+                    print(f"  Element {i} ({type(element).__name__}) caused error: {elem_error}")
+
+            raise Exception(f"Failed to generate report: {str(e)}")
+
         return filename   
 
 
