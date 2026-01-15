@@ -2499,9 +2499,14 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
         import sys
         import os
         import traceback
+        from tkinter import messagebox
 
-        # Create debug log file
-        debug_log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pdf_debug.log")
+        # Create debug log file in user's home directory (guaranteed to work)
+        try:
+            log_dir = os.path.expanduser("~")
+            debug_log_path = os.path.join(log_dir, "cmms_pdf_debug.log")
+        except:
+            debug_log_path = "C:\\cmms_pdf_debug.log"
 
         def log_debug(msg):
             """Write debug message to file"""
@@ -2511,11 +2516,16 @@ def export_professional_monthly_report_pdf(conn, month=None, year=None):
                     timestamp = dt.now().strftime('%Y-%m-%d %H:%M:%S')
                     f.write(f"[{timestamp}] {msg}\n")
                     f.flush()
-            except:
-                pass
+            except Exception as log_err:
+                # If logging fails, try to show error
+                try:
+                    messagebox.showerror("Logging Error", f"Could not write to log: {log_err}\nPath: {debug_log_path}")
+                except:
+                    pass
 
         log_debug("\n" + "="*80)
         log_debug(f"Starting PDF generation for month={month}, year={year}")
+        log_debug(f"Log file location: {debug_log_path}")
 
         from reportlab.lib.pagesizes import letter, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
@@ -4791,6 +4801,14 @@ class AITCMMSSystem:
                 except Exception as e:
                     import traceback
                     import sys
+                    import os
+
+                    # Determine log file location
+                    try:
+                        log_path = os.path.join(os.path.expanduser("~"), "cmms_pdf_debug.log")
+                    except:
+                        log_path = "C:\\cmms_pdf_debug.log"
+
                     print("\n" + "="*80, flush=True)
                     print(f"ERROR: Failed to generate PDF report for {month}/{year}", flush=True)
                     print("="*80, flush=True)
@@ -4801,7 +4819,10 @@ class AITCMMSSystem:
                     traceback.print_exc()
                     sys.stdout.flush()
                     print("="*80 + "\n", flush=True)
-                    messagebox.showerror("Error", f"Failed to generate PDF report:\n\n{str(e)}")
+                    messagebox.showerror("Error",
+                        f"Failed to generate PDF report:\n\n{str(e)}\n\n"
+                        f"Debug log saved to:\n{log_path}\n\n"
+                        f"Please check this file for detailed error information.")
         
             # ========== NOW CREATE THE BUTTONS ==========
         
